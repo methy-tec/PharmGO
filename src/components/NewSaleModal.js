@@ -310,6 +310,7 @@ export default function NewSaleModal({ visible, onClose, onSuccess }) {
                         placeholder="client@exemple.com"
                         value={customerEmail}
                         onChangeText={setCustomerEmail}
+                        placeholderTextColor={COLORS.textSecondary}
                         keyboardType="email-address"
                         autoCapitalize="none"
                       />
@@ -351,6 +352,7 @@ export default function NewSaleModal({ visible, onClose, onSuccess }) {
                       <TextInput
                         style={styles.input}
                         placeholder="Ex: Jean Dupont"
+                        placeholderTextColor={COLORS.textSecondary}
                         value={guestName}
                         onChangeText={setGuestName}
                         autoCapitalize="words"
@@ -365,6 +367,7 @@ export default function NewSaleModal({ visible, onClose, onSuccess }) {
                       <TextInput
                         style={styles.input}
                         placeholder="+242 123 456 789"
+                        placeholderTextColor={COLORS.textSecondary}
                         value={guestPhone}
                         onChangeText={setGuestPhone}
                         keyboardType="phone-pad"
@@ -387,6 +390,7 @@ export default function NewSaleModal({ visible, onClose, onSuccess }) {
                 <TextInput
                   style={styles.input}
                   placeholder="Rechercher un produit..."
+                  placeholderTextColor={COLORS.textSecondary}
                   value={searchQuery}
                   onChangeText={setSearchQuery}
                 />

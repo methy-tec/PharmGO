@@ -164,7 +164,7 @@ export default function CreatePharmacyModal({ visible, onClose, onSuccess }) {
         } else if (!/^\+?[0-9]{9,15}$/.test(formData.phone.replace(/\s+/g, ''))) {
             e.phone = 'Numéro invalide';
         }
-        if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+        if (!formData.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim()))  {
             e.email = "L'email est invalide";
         }
         if (!formData.latitude || !formData.longitude) {
@@ -230,7 +230,7 @@ export default function CreatePharmacyModal({ visible, onClose, onSuccess }) {
                     'upgrade',
                     '🔒 Limite atteinte',
                     message,
-                    { label: 'Voir les plans →', onPress: () => { /* navigation */ } },
+                    { label: 'Voir les plans →', onPress: () => {handleClose(); } },
                     6000
                 );
             } else {
@@ -412,6 +412,7 @@ export default function CreatePharmacyModal({ visible, onClose, onSuccess }) {
         </Modal>
     );
 }
+
 
 function getErrorTitle(statusCode) {
     switch (statusCode) {

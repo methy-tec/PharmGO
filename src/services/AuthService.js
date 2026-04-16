@@ -2,8 +2,8 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // URL de base de l'API
-
-const API_URL = 'https://pharma-go-backend.onrender.com/api/v1';
+// https://pharma-go-backend.onrender.com/api/v1
+const API_URL = 'http://localhost:5000/api/v1';
 
 // Creer une instance d'axios
 const api = axios.create({

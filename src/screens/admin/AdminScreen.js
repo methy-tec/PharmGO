@@ -548,7 +548,7 @@ function SubscriptionTab({ user, requests, loading, onRequestUpgrade }) {
       >
         <Ionicons name="arrow-up-circle" size={20} color="#fff" />
         <Text style={subAdminStyles.upgradeBtnText}>
-          {hasPending ? 'Demande en cours...' : 'Demander un upgrade'}
+          {hasPending ? 'Demande en cours...' : 'Demander un abonnement'}
         </Text>
       </TouchableOpacity>
 
@@ -627,8 +627,8 @@ function UpgradeModal({ visible, loading, currentPlan, onClose, onConfirm }) {
 
   const plans = [
     { key: 'basic',      label: 'Basic',      color: '#007aff', desc: '5 pharmacies · 10 employés' },
-    { key: 'premium',    label: 'Premium',    color: '#ff9500', desc: '20 pharmacies · 50 employés' },
-    { key: 'enterprise', label: 'Enterprise', color: '#6c2bd9', desc: 'Illimité' },
+    { key: 'standard',    label: 'Standard',    color: '#ff9500', desc: '20 pharmacies · 50 employés' },
+    { key: 'premium', label: 'Premium', color: '#6c2bd9', desc: 'Illimité' },
   ].filter(p => p.key !== currentPlan);
 
   const handleConfirm = () => {
@@ -649,8 +649,8 @@ function UpgradeModal({ visible, loading, currentPlan, onClose, onConfirm }) {
                 <Ionicons name="arrow-up-circle" size={22} color="#fff" />
               </View>
               <View>
-                <Text style={{ fontSize: 17, fontWeight: '800', color: '#fff' }}>Upgrade abonnement</Text>
-                <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.8)' }}>Demande au superadmin</Text>
+                <Text style={{ fontSize: 17, fontWeight: '800', color: '#fff' }}>Demande d'abonnement</Text>
+                <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.8)' }}>Demande au gerent de systeme</Text>
               </View>
             </View>
             <TouchableOpacity
