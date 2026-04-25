@@ -86,6 +86,8 @@ export default function EditPharmacyModal({
             value={name}
             onChangeText={setName}
             placeholder="Nom de la pharmacie"
+            placeholderTextColor={COLORS.textSecondary}
+            color={COLORS.textPrimary}
           />
 
           <Text style={styles.label}>Ville</Text>
@@ -94,6 +96,9 @@ export default function EditPharmacyModal({
             value={city}
             onChangeText={setCity}
             placeholder="Ville"
+            placeholderTextColor={COLORS.textSecondary}
+            color={COLORS.textPrimary}
+            
           />
 
           <View style={styles.switchRow}>

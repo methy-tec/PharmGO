@@ -100,7 +100,7 @@ export default function LoginScreen({ navigation }) {
                 {/* Formulaire */}
                 <View style={styles.formContainer}>
                     <Text style={styles.title}>Bon retour ! 👋</Text>
-                    <Text style={styles.subtitle}>Connectez-vous à pour continuer</Text>
+                    <Text style={styles.subtitle}>Connectez-vous pour continuer</Text>
 
                     {/* Email  */}
                     <View style={styles.inputContainer}>
@@ -151,7 +151,7 @@ export default function LoginScreen({ navigation }) {
                     {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
 
                     {/* Mot de passe oublié */}
-                    <TouchableOpacity style={styles.forgotPassword}>
+                    <TouchableOpacity style={styles.forgotPassword} onPress={() => navigation.navigate('ResetPassword')}>
                         <Text style={styles.forgotPasswordText}>Mot de passe oublié ?</Text>
                     </TouchableOpacity>
 

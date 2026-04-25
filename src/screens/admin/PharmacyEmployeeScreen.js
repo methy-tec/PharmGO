@@ -432,6 +432,7 @@ export default function PharmacyEmployeesScreen({ route, navigation }) {
               onChangeText={setNewSalary}
               keyboardType="numeric"
               placeholder="Nouveau salaire"
+              placeholderTextColor={COLORS.textSecondary}
               style={styles.modalInput}
             />
             <View style={styles.modalActions}>
@@ -466,6 +467,7 @@ export default function PharmacyEmployeesScreen({ route, navigation }) {
               value={emailInput}
               onChangeText={setEmailInput}
               placeholder="Adresse email de l'utilisateur"
+              placeholderTextColor={COLORS.textSecondary}
               autoCapitalize="none"
               style={styles.modalInput}
             />

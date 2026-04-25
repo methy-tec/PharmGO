@@ -290,7 +290,7 @@ export default function CreatePharmacyModal({ visible, onClose, onSuccess }) {
                             <Text style={styles.label}>Nom de la pharmacie *</Text>
                             <View style={[styles.inputContainer, errors.name && styles.inputError]}>
                                 <Ionicons name="medkit-outline" size={20} color={COLORS.textSecondary} />
-                                <TextInput style={styles.input} placeholder="Ex: Pharmacie Centrale" value={formData.name} onChangeText={t => updateField('name', t)} autoCapitalize="words" />
+                                <TextInput style={styles.input} placeholder="Ex: Pharmacie Centrale" placeholderTextColor={COLORS.textSecondary} value={formData.name} onChangeText={t => updateField('name', t)} autoCapitalize="words" />
                             </View>
                             {errors.name && <Text style={styles.errorText}>{errors.name}</Text>}
                             <Text style={styles.infoMessage}>ℹ️ Le numéro de licence sera généré automatiquement selon votre abonnement.</Text>
@@ -301,7 +301,7 @@ export default function CreatePharmacyModal({ visible, onClose, onSuccess }) {
                             <Text style={styles.label}>Description (optionnel)</Text>
                             <View style={styles.inputContainer}>
                                 <Ionicons name="document-text-outline" size={20} color={COLORS.textSecondary} />
-                                <TextInput style={[styles.input, styles.textArea]} placeholder="Description de la pharmacie" value={formData.description} onChangeText={t => updateField('description', t)} multiline numberOfLines={3} />
+                                <TextInput style={[styles.input, styles.textArea]} placeholder="Description de la pharmacie" placeholderTextColor={COLORS.textSecondary} value={formData.description} onChangeText={t => updateField('description', t)} multiline numberOfLines={3} />
                             </View>
                         </View>
 
@@ -310,7 +310,7 @@ export default function CreatePharmacyModal({ visible, onClose, onSuccess }) {
                             <Text style={styles.label}>Adresse *</Text>
                             <View style={[styles.inputContainer, errors.address && styles.inputError]}>
                                 <Ionicons name="location-outline" size={20} color={COLORS.textSecondary} />
-                                <TextInput style={styles.input} placeholder="Ex: 123 Rue de la Paix" value={formData.address} onChangeText={t => updateField('address', t)} />
+                                <TextInput style={styles.input} placeholder="Ex: 123 Rue de la Paix" placeholderTextColor={COLORS.textSecondary} value={formData.address} onChangeText={t => updateField('address', t)} />
                             </View>
                             {errors.address && <Text style={styles.errorText}>{errors.address}</Text>}
                         </View>
@@ -320,7 +320,7 @@ export default function CreatePharmacyModal({ visible, onClose, onSuccess }) {
                             <Text style={styles.label}>Ville *</Text>
                             <View style={[styles.inputContainer, errors.city && styles.inputError]}>
                                 <Ionicons name="business-outline" size={20} color={COLORS.textSecondary} />
-                                <TextInput style={styles.input} placeholder="Ex: Brazzaville" value={formData.city} onChangeText={t => updateField('city', t)} autoCapitalize="words" />
+                                <TextInput style={styles.input} placeholder="Ex: Brazzaville" placeholderTextColor={COLORS.textSecondary} value={formData.city} onChangeText={t => updateField('city', t)} autoCapitalize="words" />
                             </View>
                             {errors.city && <Text style={styles.errorText}>{errors.city}</Text>}
                         </View>
@@ -330,7 +330,7 @@ export default function CreatePharmacyModal({ visible, onClose, onSuccess }) {
                             <Text style={styles.label}>Téléphone *</Text>
                             <View style={[styles.inputContainer, errors.phone && styles.inputError]}>
                                 <Ionicons name="call-outline" size={20} color={COLORS.textSecondary} />
-                                <TextInput style={styles.input} placeholder="+242 123 456 789" value={formData.phone} onChangeText={t => updateField('phone', t)} keyboardType="phone-pad" />
+                                <TextInput style={styles.input} placeholder="+242 123 456 789" placeholderTextColor={COLORS.textSecondary} value={formData.phone} onChangeText={t => updateField('phone', t)} keyboardType="phone-pad" />
                             </View>
                             {errors.phone && <Text style={styles.errorText}>{errors.phone}</Text>}
                         </View>
@@ -340,7 +340,7 @@ export default function CreatePharmacyModal({ visible, onClose, onSuccess }) {
                             <Text style={styles.label}>Email (optionnel)</Text>
                             <View style={[styles.inputContainer, errors.email && styles.inputError]}>
                                 <Ionicons name="mail-outline" size={20} color={COLORS.textSecondary} />
-                                <TextInput style={styles.input} placeholder="contact@pharmacie.com" value={formData.email} onChangeText={t => updateField('email', t.toLowerCase())} keyboardType="email-address" autoCapitalize="none" />
+                                <TextInput style={styles.input} placeholder="contact@pharmacie.com" placeholderTextColor={COLORS.textSecondary} value={formData.email} onChangeText={t => updateField('email', t.toLowerCase())} keyboardType="email-address" autoCapitalize="none" />
                             </View>
                             {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
                         </View>
@@ -351,11 +351,11 @@ export default function CreatePharmacyModal({ visible, onClose, onSuccess }) {
                             <View style={styles.row}>
                                 <View style={[styles.halfInput, errors.location && styles.inputError]}>
                                     <Ionicons name="navigate-outline" size={20} color={COLORS.textSecondary} />
-                                    <TextInput style={styles.input} placeholder="Latitude" value={formData.latitude} onChangeText={t => updateField('latitude', t)} keyboardType="decimal-pad" />
+                                    <TextInput style={styles.input} placeholder="Latitude" placeholderTextColor={COLORS.textSecondary} value={formData.latitude} onChangeText={t => updateField('latitude', t)} keyboardType="decimal-pad" />
                                 </View>
                                 <View style={[styles.halfInput, errors.location && styles.inputError]}>
                                     <Ionicons name="navigate-outline" size={20} color={COLORS.textSecondary} />
-                                    <TextInput style={styles.input} placeholder="Longitude" value={formData.longitude} onChangeText={t => updateField('longitude', t)} keyboardType="decimal-pad" />
+                                    <TextInput style={styles.input} placeholder="Longitude" placeholderTextColor={COLORS.textSecondary} value={formData.longitude} onChangeText={t => updateField('longitude', t)} keyboardType="decimal-pad" />
                                 </View>
                             </View>
                             {errors.location && <Text style={styles.errorText}>{errors.location}</Text>}

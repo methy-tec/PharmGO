@@ -19,13 +19,17 @@ import authService from '../../services/AuthService';
 
 import Toast from '../../components/Toast';
 
-export default function VerifyEmailScreen({ navigation }) {
+export default function VerifyEmailScreen({ navigation, route }) {
   const { user, verifyEmail, refreshUser, logout } = useAuth(); // ← Ajoute refreshUser
+
+  const mode = route.params?.mode;
+  const emailFromParams = route.params?.email;
   
   const [code, setCode] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
   const [countdown, setCountdown] = useState(0);
+
   
   const inputRefs = useRef([]);
 
@@ -74,28 +78,36 @@ const handleVerify = async (fullCode = code.join('')) => {
         return;
     }
 
-    try {
+    if (mode === 'reset') {
+      // reset password -> verifier le code
+      try{
         setLoading(true);
-        const response = await verifyEmail(fullCode);
+        const response = await authService.verifyResetCode(emailFromParams, fullCode);
 
         if (response.success) {
-            // 1. Rafraîchir l'utilisateur → met à jour isEmailVerified
-            await refreshUser();
-
-            // OU si tu préfères reset (moins recommandé ici)
-            // navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+          showToast('success', 'Code valide', 'Choisissez votre nouveau mot de passe');
+          setTimeout(() => navigation.navigate('NewPassword', { email: emailFromParams, code: fullCode, }), 1500);
+        }else{
+          showToast('error', 'Code invalide', response.message || 'Veuillez vérifier votre code et réessayer.');
         }
-    } catch (error) {
-        setCode(['', '', '', '', '', '']);
-        inputRefs.current[0]?.focus();
-
-        showToast(
-            'error',
-            'Code invalide',
-            error.message || 'Veuillez vérifier votre code et réessayer.'
-        );
-    } finally {
+      }catch(error){
+        showToast('error', 'Erreur', error.message || 'Veuillez vérifier votre code et réessayer.');
+      }
+      finally {
         setLoading(false);
+      }
+    }else{
+      // Flow normal -> verification email d'inscription
+      try{
+        setLoading(true);
+        await verifyEmail(fullCode);
+        showToast('success', 'Email verifie', 'Bienvenue !');
+      }catch(error){
+        showToast('error', 'Erreur', error.message || 'Veuillez vérifier votre code et réessayer.');
+      }
+      finally {
+        setLoading(false);
+      }
     }
 };
   const handleResendCode = async () => {
@@ -135,7 +147,9 @@ const handleVerify = async (fullCode = code.join('')) => {
         <View style={styles.iconContainer}>
           <Ionicons name="mail" size={64} color="#fff" />
         </View>
-        <Text style={styles.headerTitle}>Vérifiez votre email</Text>
+        <Text style={styles.headerTitle}>
+          {mode === 'reset' ? 'Verification du code' : 'Vérifier votre email'}
+          </Text>
         <Text style={styles.headerSubtitle}>
           Un code à 6 chiffres a été envoyé à
         </Text>

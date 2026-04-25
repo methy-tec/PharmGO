@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAuth } from "../context/AuthContext";
@@ -9,6 +9,8 @@ import LoginScreen from "../screens/auth/LoginScreen";
 import RegisterScreen from "../screens/auth/RegisterScreen";
 import VerifyEmailScreen from "../screens/auth/VerifyEmailScreen";
 import ChangeEmailScreen from "../screens/auth/ChangeEmailScreen";
+import ResetPasswordScreen from "../screens/auth/ResetPasswordScreen";
+import NewPasswordScreen from "../screens/auth/NewPasswordScreen";
 
 // Ecrans Home
 import HomeScreen from "../screens/HomeScreen";
@@ -27,6 +29,9 @@ import WorkerHomeScreen from "../screens/travailleurs/WorkerHomeScreen";
 // Ecran User
 import UserScreen from "../screens/user/UserScreen";
 
+// APP update
+import { checkForAppUpdate } from "../hooks/usAppUpdate";
+
 const Stack = createNativeStackNavigator();
 
 // ----------------- NAVIGATORS -----------------
@@ -36,7 +41,10 @@ function AuthNavigator() {
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="Register" component={RegisterScreen} />
             <Stack.Screen name="VerifyEmail" component={VerifyEmailScreen} />
+            
             <Stack.Screen name="ChangeEmail" component={ChangeEmailScreen} />
+            <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
+            <Stack.Screen name="NewPassword" component={NewPasswordScreen} />
         </Stack.Navigator>
     );
 }
@@ -85,6 +93,13 @@ function LoadingScreen() {
 // ----------------- ROOT NAVIGATOR -----------------
 export default function RootNavigator() {
     const { isAuthenticated, isLoading, user } = useAuth();
+
+    useEffect(() => {
+    if (!isLoading) {
+      // On vérifie la mise à jour une fois que l'app est chargée
+      checkForAppUpdate();
+    }
+  }, [isLoading]);
 
     console.log('📍 Navigation State:', {
         isAuthenticated,

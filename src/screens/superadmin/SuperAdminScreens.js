@@ -7,10 +7,27 @@ import AuthContext, { useAuth } from '../../context/AuthContext';
 import { COLORS, FONTS, SPACING, RADIUS } from '../../constants/theme';
 import Toast from '../../components/Toast';
 
+// Tabs
+import StatsTab from './../../components/tabs/StatsTab';
+import UsersTab         from '../../components/tabs/UsersTab';
+import PharmaciesTab    from '../../components/tabs/PharmaciesTab';
+import SubscriptionsTab from '../../components/tabs/SubscriptionsTab';
+
+//Modal 
+import ConfirmLogoutModal from '../../components/modals/ConfirmLogoutModal';
+import ActiveModal from '../../components/modals/ActiveModal';
+import ConfirmDeleteModal from '../../components/modals/ConfirmDeleteModal';
+import SuspendModal from '../../components/modals/SuspendModal';
+import PharmacyActionModal from '../../components/modals/PharmacyActionModal';
+import UpdateRoleModal from '../../components/modals/UpdateRoleModal';
+import CreateAdminModal from '../../components/modals/CreateAdminModal';
+import RejectRequestModal from '../../components/modals/RejectRequestModal.js';
+
 const ROLES = ['user', 'pharmacie', 'admin'];
 
 export default function SuperAdminScreens(){
     const { user, logout, getGlobalStats, getAllUsers, getAllPharmacies, validatePharmacy, suspendPharmacy, getSubscriptionHistory} = useAuth();
+    const [logoutModal, setLogoutModal] = useState(false);
 
     const [activeTab, setActiveTab] = useState('stats');
     const [loading, setLoading] = useState(true);
@@ -37,6 +54,9 @@ export default function SuperAdminScreens(){
     const [createAdminModal, setCreateAdminModal] = useState(false);
     const [deleteModal,  setDeleteModal]  = useState({ visible: false, userId: null, userName: '' });
     const [suspendModal, setSuspendModal] = useState({ visible: false, userId: null, userName: '' });
+    // Ajouter ces states manquants en haut du composant
+    const [activeModal, setActiveModal] = useState({ visible: false, userId: null, userName: '' });
+    const [active, setActive] = useState(false);
     const [roleModal,    setRoleModal]    = useState({ visible: false, userId: null, userName: '', currentRole: '' });
 
     // Loading states
@@ -216,7 +236,7 @@ export default function SuperAdminScreens(){
         }
     };
 
-    // ── SUSPEND USER ─────────────────────────────────────────────────────────
+    // ── SUSPEND USER et Active ─────────────────────────────────────────────────────────
     const handleSuspendUser = (userId, userName) =>
         setSuspendModal({ visible: true, userId, userName });
 
@@ -224,15 +244,37 @@ export default function SuperAdminScreens(){
         try {
             setSuspending(true);
             await authService.suspendUser(suspendModal.userId, reason);
+            
             setUsers(prev => prev.map(u =>
-                u.id === suspendModal.userId ? { ...u, isSuspended: true } : u
+                u.id === suspendModal.userId 
+                    ? { ...u, isSuspended: true, status: 'suspended' } : u
             ));
+
             setSuspendModal({ visible: false, userId: null, userName: '' });
             showToast('success', '✅ Succès', 'Utilisateur suspendu');
         } catch (error) {
             showToast('error', 'Erreur', error.message || 'Impossible de suspendre');
         } finally {
             setSuspending(false);
+        }
+    };
+
+    const handleActiveUser = (userId, userName) =>
+        setActiveModal({ visible: true, userId, userName });
+
+    const confirmActive = async () => {
+        try {
+            setActive(true);
+            await authService.activeUser(activeModal.userId);
+            setUsers(prev => prev.map(u =>
+                u.id === activeModal.userId ? { ...u, isSuspended: false, status: 'active' } : u
+            ));
+            setActiveModal({ visible: false, userId: null, userName: '' });
+            showToast('success', '✅ Succès', 'Utilisateur actif');
+        } catch (error) {
+            showToast('error', 'Erreur', error.message || 'Impossible d activer');
+        } finally {
+            setActive(false);
         }
     };
 
@@ -277,17 +319,17 @@ export default function SuperAdminScreens(){
             <LinearGradient colors={['#6c2bd9', '#9c27b0']} style={styles.header}>
                 <View style={styles.headerTop}>
                     <View>
-                        <Text style={styles.headerTitle}>👑 Super Admin</Text>
-                        <Text style={styles.headerSubtitle}>Contrôle total</Text>
+                        <Text style={styles.headerTitle}>Système de contrôle</Text>
+                        <Text style={styles.headerSubtitle}>Contrôle total de Pharma Go</Text>
                     </View>
                     <View style={styles.headerActions}>
                         {activeTab === 'users' && (
                             <TouchableOpacity style={styles.createAdminBtn} onPress={() => setCreateAdminModal(true)}>
                                 <Ionicons name="person-add" size={16} color="#6c2bd9" />
-                                <Text style={styles.createAdminBtnText}>Créer Admin</Text>
+                                <Text style={styles.createAdminBtnText}>+ Admin</Text>
                             </TouchableOpacity>
                         )}
-                        <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
+                        <TouchableOpacity style={styles.logoutBtn} onPress={() => setLogoutModal(true)}>
                             <Ionicons name="log-out-outline" size={22} color="#fff" />
                         </TouchableOpacity>
                     </View>
@@ -342,6 +384,7 @@ export default function SuperAdminScreens(){
                         users={users}
                         onDeleteUser={handleDeleteUser}
                         onSuspendUser={handleSuspendUser}
+                        onActiveUser={handleActiveUser}
                         onUpdateRole={handleUpdateRole}
                         onCreateAdmin={() => setCreateAdminModal(true)}
                     />
@@ -402,6 +445,13 @@ export default function SuperAdminScreens(){
                 onCancel={() => setSuspendModal({ visible: false, userId: null, userName: '' })}
                 onConfirm={confirmSuspend}
             />
+            <ActiveModal
+                visible={activeModal.visible}
+                userName={activeModal.userName}
+                loading={active}
+                onCancel={() => setActiveModal({ visible: false, userId: null, userName: '' })}
+                onConfirm={confirmActive}
+            />
             <UpdateRoleModal
                 visible={roleModal.visible}
                 userName={roleModal.userName}
@@ -421,896 +471,21 @@ export default function SuperAdminScreens(){
                 onConfirm={confirmPharmacyAction}
             />
             <RejectRequestModal
-    visible={rejectModal.visible}
-    userName={rejectModal.userName}
-    loading={processingRequestId === rejectModal.requestId}
-    onCancel={() => setRejectModal({ visible: false, requestId: null, userName: '' })}
-    onConfirm={(reason) => handleRejectRequest(rejectModal.requestId, reason)}
-/>
+                visible={rejectModal.visible}
+                userName={rejectModal.userName}
+                loading={processingRequestId === rejectModal.requestId}
+                onCancel={() => setRejectModal({ visible: false, requestId: null, userName: '' })}
+                onConfirm={(reason) => handleRejectRequest(rejectModal.requestId, reason)}
+            />
+            <ConfirmLogoutModal
+                visible={logoutModal}
+                onCancel={() => setLogoutModal(false)}
+                onConfirm={() => { setLogoutModal(false); logout(); }}
+            />
         </View>
     );
 }
 
-// ============================================
-// MODAL — PHARMACY ACTION (Valider / Suspendre)
-// ============================================
-function PharmacyActionModal({ visible, type, pharmacyName, loading, onClose, onConfirm }) {
-    const [reason, setReason] = useState('');
-    const [error, setError]   = useState('');
-
-    // ✅ FIX : isSuspend = true quand on SUSPEND (logique correcte)
-    const isSuspend = type === 'suspend';
-
-    // Reset à chaque ouverture
-    useEffect(() => {
-        if (visible) { setReason(''); setError(''); }
-    }, [visible]);
-
-    const handleConfirm = () => {
-        // ✅ La raison n'est requise QUE pour la suspension
-        if (isSuspend && !reason.trim()) {
-            setError('Veuillez indiquer une raison');
-            return;
-        }
-        setError('');
-        onConfirm(isSuspend ? reason.trim() : '');
-    };
-
-    return (
-        <Modal visible={visible} animationType="fade" transparent>
-            <View style={styles.overlay}>
-                <View style={styles.confirmBox}>
-                    {/* Icône */}
-                    <View style={[styles.confirmIconWrap, {
-                        backgroundColor: isSuspend ? '#fff8f0' : '#f0fff4'
-                    }]}>
-                        <Ionicons
-                            name={isSuspend ? 'ban' : 'checkmark-circle-outline'}
-                            size={36}
-                            color={isSuspend ? '#ff9500' : '#00b368'}
-                        />
-                    </View>
-
-                    {/* Titre */}
-                    <Text style={styles.confirmTitle}>
-                        {isSuspend ? 'Suspendre' : 'Valider'} la pharmacie
-                    </Text>
-
-                    {/* Message */}
-                    <Text style={styles.confirmMsg}>
-                        {isSuspend
-                            ? 'Êtes-vous sûr de vouloir suspendre\n'
-                            : 'Confirmer la validation de\n'
-                        }
-                        <Text style={styles.confirmBold}>{pharmacyName}</Text>
-                        {isSuspend ? ' ?' : ' ?\nElle sera immédiatement active.'}
-                    </Text>
-
-                    {/* Champ raison — uniquement pour suspension */}
-                    {isSuspend && (
-                        <View style={{ width: '100%', marginBottom: 16 }}>
-                            <Text style={styles.formLabel}>Raison *</Text>
-                            <View style={[styles.textAreaWrap, error ? styles.inputError : null]}>
-                                <TextInput
-                                    style={styles.textArea}
-                                    multiline
-                                    numberOfLines={3}
-                                    placeholder="Motif de la suspension..."
-                                    placeholderTextColor="#bbb"
-                                    value={reason}
-                                    onChangeText={v => { setReason(v); setError(''); }}
-                                />
-                            </View>
-                            {error ? <Text style={styles.errorText}>{error}</Text> : null}
-                        </View>
-                    )}
-
-                    {/* Boutons */}
-                    <View style={styles.confirmRow}>
-                        <TouchableOpacity style={styles.btnOutline} onPress={onClose} disabled={loading}>
-                            <Text style={styles.btnOutlineText}>Annuler</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[styles.btnSolid, {
-                                backgroundColor: isSuspend ? '#ff9500' : '#00b368'
-                            }]}
-                            onPress={handleConfirm}
-                            disabled={loading}
-                        >
-                            {loading ? (
-                                <ActivityIndicator color="#fff" />
-                            ) : (
-                                <>
-                                    <Ionicons
-                                        name={isSuspend ? 'ban' : 'checkmark'}
-                                        size={18}
-                                        color="#fff"
-                                    />
-                                    <Text style={styles.btnSolidText}>
-                                        {isSuspend ? 'Suspendre' : 'Valider'}
-                                    </Text>
-                                </>
-                            )}
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            </View>
-        </Modal>
-    );
-}
-
-// ============================================
-// MODAL — CONFIRM DELETE
-// ============================================
-function ConfirmDeleteModal({ visible, userName, loading, onCancel, onConfirm }) {
-    return (
-        <Modal visible={visible} animationType="fade" transparent>
-            <View style={styles.overlay}>
-                <View style={styles.confirmBox}>
-                    <View style={[styles.confirmIconWrap, { backgroundColor: '#fff1f0' }]}>
-                        <Ionicons name="trash" size={32} color="#ff3b30" />
-                    </View>
-                    <Text style={styles.confirmTitle}>Supprimer l'utilisateur</Text>
-                    <Text style={styles.confirmMsg}>
-                        {'Supprimer '}
-                        <Text style={styles.confirmBold}>{userName}</Text>
-                        {' ?\nCette action est irréversible.'}
-                    </Text>
-                    <View style={styles.confirmRow}>
-                        <TouchableOpacity style={styles.btnOutline} onPress={onCancel} disabled={loading}>
-                            <Text style={styles.btnOutlineText}>Annuler</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={[styles.btnSolid, { backgroundColor: '#ff3b30' }]} onPress={onConfirm} disabled={loading}>
-                            {loading
-                                ? <ActivityIndicator size="small" color="#fff" />
-                                : <><Ionicons name="trash-outline" size={16} color="#fff" /><Text style={styles.btnSolidText}>Supprimer</Text></>
-                            }
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            </View>
-        </Modal>
-    );
-}
-
-// ============================================
-// MODAL — SUSPEND USER
-// ============================================
-function SuspendModal({ visible, userName, loading, onCancel, onConfirm }) {
-    const [reason, setReason] = useState('');
-    const [error, setError]   = useState('');
-
-    const handleConfirm = () => {
-        if (!reason.trim()) { setError('Veuillez indiquer une raison'); return; }
-        setError('');
-        onConfirm(reason.trim());
-    };
-
-    const handleCancel = () => { setReason(''); setError(''); onCancel(); };
-
-    return (
-        <Modal visible={visible} animationType="slide" transparent>
-            <View style={styles.overlayBottom}>
-                <View style={styles.sheetBox}>
-                    <LinearGradient colors={['#ff9500', '#ff6b00']} style={styles.sheetHeader}>
-                        <View style={styles.sheetHeaderLeft}>
-                            <View style={styles.sheetIconWrap}>
-                                <Ionicons name="ban" size={22} color="#fff" />
-                            </View>
-                            <View>
-                                <Text style={styles.sheetTitle}>Suspendre le compte</Text>
-                                <Text style={styles.sheetSubtitle}>{userName}</Text>
-                            </View>
-                        </View>
-                        <TouchableOpacity style={styles.sheetCloseBtn} onPress={handleCancel}>
-                            <Ionicons name="close" size={20} color="rgba(255,255,255,0.8)" />
-                        </TouchableOpacity>
-                    </LinearGradient>
-                    <View style={styles.sheetBody}>
-                        <View style={[styles.infoBanner, { backgroundColor: '#fff8f0' }]}>
-                            <Ionicons name="warning" size={16} color="#ff9500" />
-                            <Text style={[styles.infoBannerText, { color: '#c96a00' }]}>
-                                L'utilisateur ne pourra plus se connecter tant que son compte est suspendu.
-                            </Text>
-                        </View>
-                        <Text style={styles.formLabel}>Raison de la suspension *</Text>
-                        <View style={[styles.textAreaWrap, error ? styles.inputError : null]}>
-                            <TextInput
-                                style={styles.textArea}
-                                placeholder="Ex: Violation des conditions d'utilisation..."
-                                placeholderTextColor="#bbb"
-                                multiline
-                                numberOfLines={4}
-                                value={reason}
-                                onChangeText={v => { setReason(v); setError(''); }}
-                            />
-                        </View>
-                        {error ? <Text style={styles.errorText}>{error}</Text> : null}
-                    </View>
-                    <View style={styles.sheetFooter}>
-                        <TouchableOpacity style={styles.btnOutline} onPress={handleCancel} disabled={loading}>
-                            <Text style={styles.btnOutlineText}>Annuler</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={[styles.btnSolid, { backgroundColor: '#ff9500' }]} onPress={handleConfirm} disabled={loading}>
-                            {loading
-                                ? <ActivityIndicator size="small" color="#fff" />
-                                : <><Ionicons name="ban" size={16} color="#fff" /><Text style={styles.btnSolidText}>Suspendre</Text></>
-                            }
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            </View>
-        </Modal>
-    );
-}
-
-// ============================================
-// MODAL — UPDATE ROLE
-// ============================================
-function UpdateRoleModal({ visible, userName, currentRole, loading, onCancel, onConfirm }) {
-    const [selectedRole, setSelectedRole] = useState(currentRole);
-    useEffect(() => { setSelectedRole(currentRole); }, [currentRole]);
-
-    const roleConfig = {
-        user:      { label: 'Utilisateur',    icon: 'person',  color: '#34c759', desc: 'Accès standard, consultation uniquement' },
-        pharmacie: { label: 'Pharmacien',     icon: 'medkit',  color: '#ff9500', desc: 'Gestion d\'une pharmacie' },
-        admin:     { label: 'Administrateur', icon: 'shield',  color: '#007aff', desc: 'Accès admin complet, gestion des utilisateurs' },
-    };
-
-    return (
-        <Modal visible={visible} animationType="slide" transparent>
-            <View style={styles.overlayBottom}>
-                <View style={styles.sheetBox}>
-                    <LinearGradient colors={['#007aff', '#0056cc']} style={styles.sheetHeader}>
-                        <View style={styles.sheetHeaderLeft}>
-                            <View style={styles.sheetIconWrap}>
-                                <Ionicons name="swap-horizontal" size={22} color="#fff" />
-                            </View>
-                            <View>
-                                <Text style={styles.sheetTitle}>Modifier le rôle</Text>
-                                <Text style={styles.sheetSubtitle}>{userName}</Text>
-                            </View>
-                        </View>
-                        <TouchableOpacity style={styles.sheetCloseBtn} onPress={onCancel}>
-                            <Ionicons name="close" size={20} color="rgba(255,255,255,0.8)" />
-                        </TouchableOpacity>
-                    </LinearGradient>
-                    <View style={styles.sheetBody}>
-                        <Text style={styles.formLabel}>Sélectionner un rôle</Text>
-                        <View style={styles.roleList}>
-                            {ROLES.map(role => {
-                                const cfg        = roleConfig[role];
-                                const isSelected = selectedRole === role;
-                                const isCurrent  = currentRole  === role;
-                                return (
-                                    <TouchableOpacity
-                                        key={role}
-                                        style={[styles.roleOption, isSelected && { borderColor: cfg.color, backgroundColor: cfg.color + '10' }]}
-                                        onPress={() => setSelectedRole(role)}
-                                    >
-                                        <View style={[styles.roleOptionIcon, { backgroundColor: cfg.color + '20' }]}>
-                                            <Ionicons name={cfg.icon} size={20} color={cfg.color} />
-                                        </View>
-                                        <View style={{ flex: 1 }}>
-                                            <View style={styles.roleOptionHeader}>
-                                                <Text style={[styles.roleOptionLabel, isSelected && { color: cfg.color }]}>{cfg.label}</Text>
-                                                {isCurrent && (
-                                                    <View style={styles.currentBadge}>
-                                                        <Text style={styles.currentBadgeText}>Actuel</Text>
-                                                    </View>
-                                                )}
-                                            </View>
-                                            <Text style={styles.roleOptionDesc}>{cfg.desc}</Text>
-                                        </View>
-                                        <View style={[styles.radioOuter, isSelected && { borderColor: cfg.color }]}>
-                                            {isSelected && <View style={[styles.radioInner, { backgroundColor: cfg.color }]} />}
-                                        </View>
-                                    </TouchableOpacity>
-                                );
-                            })}
-                        </View>
-                    </View>
-                    <View style={styles.sheetFooter}>
-                        <TouchableOpacity style={styles.btnOutline} onPress={onCancel} disabled={loading}>
-                            <Text style={styles.btnOutlineText}>Annuler</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[styles.btnSolid, { backgroundColor: '#007aff', opacity: selectedRole === currentRole ? 0.4 : 1 }]}
-                            onPress={() => onConfirm(selectedRole)}
-                            disabled={loading || selectedRole === currentRole}
-                        >
-                            {loading
-                                ? <ActivityIndicator size="small" color="#fff" />
-                                : <><Ionicons name="checkmark" size={16} color="#fff" /><Text style={styles.btnSolidText}>Confirmer</Text></>
-                            }
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            </View>
-        </Modal>
-    );
-}
-
-// ============================================
-// MODAL — CREATE ADMIN
-// ============================================
-function CreateAdminModal({ visible, onClose, onSuccess }) {
-    const [form, setForm]         = useState({ firstName: '', lastName: '', email: '', phone: '', password: '' });
-    const [loading, setLoading]   = useState(false);
-    const [errors, setErrors]     = useState({});
-    const [showPassword, setShowPassword] = useState(false);
-
-    const validate = () => {
-        const e = {};
-        if (!form.firstName.trim()) e.firstName = 'Prénom requis';
-        if (!form.lastName.trim())  e.lastName  = 'Nom requis';
-        if (!form.email.trim())     e.email     = 'Email requis';
-        else if (!/\S+@\S+\.\S+/.test(form.email)) e.email = 'Email invalide';
-        if (!form.phone.trim())     e.phone     = 'Téléphone requis';
-        if (!form.password.trim())  e.password  = 'Mot de passe requis';
-        else if (form.password.length < 8) e.password = 'Min. 8 caractères';
-        setErrors(e);
-        return Object.keys(e).length === 0;
-    };
-
-    const handleSubmit = async () => {
-        if (!validate()) return;
-        try {
-            setLoading(true);
-            const res = await authService.createAdmin(form);
-            if (res.success) {
-                setForm({ firstName: '', lastName: '', email: '', phone: '', password: '' });
-                setErrors({});
-                onSuccess(res.data.admin);
-            }
-        } catch (error) {
-            Alert.alert('Erreur', error.message || 'Impossible de créer l\'admin');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleClose = () => {
-        setForm({ firstName: '', lastName: '', email: '', phone: '', password: '' });
-        setErrors({});
-        onClose();
-    };
-
-    return (
-        <Modal visible={visible} animationType="slide" transparent>
-            <View style={styles.overlayBottom}>
-                <View style={styles.sheetBox}>
-                    <LinearGradient colors={['#6c2bd9', '#9c27b0']} style={styles.sheetHeader}>
-                        <View style={styles.sheetHeaderLeft}>
-                            <View style={styles.sheetIconWrap}>
-                                <Ionicons name="shield-checkmark" size={22} color="#fff" />
-                            </View>
-                            <View>
-                                <Text style={styles.sheetTitle}>Créer un Admin</Text>
-                                <Text style={styles.sheetSubtitle}>Accès administrateur complet</Text>
-                            </View>
-                        </View>
-                        <TouchableOpacity style={styles.sheetCloseBtn} onPress={handleClose}>
-                            <Ionicons name="close" size={20} color="rgba(255,255,255,0.8)" />
-                        </TouchableOpacity>
-                    </LinearGradient>
-                    <ScrollView style={styles.sheetBody} showsVerticalScrollIndicator={false}>
-                        <View style={styles.infoBanner}>
-                            <Ionicons name="information-circle" size={16} color="#6c2bd9" />
-                            <Text style={styles.infoBannerText}>Auto-vérifié · 30 jours d'essai gratuit</Text>
-                        </View>
-                        <View style={styles.formRow}>
-                            <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
-                                <Text style={styles.formLabel}>Prénom *</Text>
-                                <View style={[styles.inputWrap, errors.firstName && styles.inputError]}>
-                                    <Ionicons name="person-outline" size={16} color="#999" style={styles.inputIcon} />
-                                    <TextInput style={styles.input} placeholder="Jean" placeholderTextColor="#bbb" value={form.firstName} onChangeText={v => setForm(p => ({ ...p, firstName: v }))} />
-                                </View>
-                                {errors.firstName && <Text style={styles.errorText}>{errors.firstName}</Text>}
-                            </View>
-                            <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
-                                <Text style={styles.formLabel}>Nom *</Text>
-                                <View style={[styles.inputWrap, errors.lastName && styles.inputError]}>
-                                    <Ionicons name="person-outline" size={16} color="#999" style={styles.inputIcon} />
-                                    <TextInput style={styles.input} placeholder="Dupont" placeholderTextColor="#bbb" value={form.lastName} onChangeText={v => setForm(p => ({ ...p, lastName: v }))} />
-                                </View>
-                                {errors.lastName && <Text style={styles.errorText}>{errors.lastName}</Text>}
-                            </View>
-                        </View>
-                        <View style={styles.formGroup}>
-                            <Text style={styles.formLabel}>Email *</Text>
-                            <View style={[styles.inputWrap, errors.email && styles.inputError]}>
-                                <Ionicons name="mail-outline" size={16} color="#999" style={styles.inputIcon} />
-                                <TextInput style={styles.input} placeholder="admin@example.com" placeholderTextColor="#bbb" keyboardType="email-address" autoCapitalize="none" value={form.email} onChangeText={v => setForm(p => ({ ...p, email: v }))} />
-                            </View>
-                            {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
-                        </View>
-                        <View style={styles.formGroup}>
-                            <Text style={styles.formLabel}>Téléphone *</Text>
-                            <View style={[styles.inputWrap, errors.phone && styles.inputError]}>
-                                <Ionicons name="call-outline" size={16} color="#999" style={styles.inputIcon} />
-                                <TextInput style={styles.input} placeholder="+33 6 12 34 56 78" placeholderTextColor="#bbb" keyboardType="phone-pad" value={form.phone} onChangeText={v => setForm(p => ({ ...p, phone: v }))} />
-                            </View>
-                            {errors.phone && <Text style={styles.errorText}>{errors.phone}</Text>}
-                        </View>
-                        <View style={styles.formGroup}>
-                            <Text style={styles.formLabel}>Mot de passe *</Text>
-                            <View style={[styles.inputWrap, errors.password && styles.inputError]}>
-                                <Ionicons name="lock-closed-outline" size={16} color="#999" style={styles.inputIcon} />
-                                <TextInput style={[styles.input, { flex: 1 }]} placeholder="Min. 8 caractères" placeholderTextColor="#bbb" secureTextEntry={!showPassword} value={form.password} onChangeText={v => setForm(p => ({ ...p, password: v }))} />
-                                <TouchableOpacity onPress={() => setShowPassword(p => !p)} style={styles.eyeBtn}>
-                                    <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={18} color="#999" />
-                                </TouchableOpacity>
-                            </View>
-                            {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
-                        </View>
-                    </ScrollView>
-                    <View style={styles.sheetFooter}>
-                        <TouchableOpacity style={styles.btnOutline} onPress={handleClose} disabled={loading}>
-                            <Text style={styles.btnOutlineText}>Annuler</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={[styles.btnSolid, { backgroundColor: '#6c2bd9' }]} onPress={handleSubmit} disabled={loading}>
-                            {loading
-                                ? <ActivityIndicator size="small" color="#fff" />
-                                : <><Ionicons name="shield-checkmark" size={16} color="#fff" /><Text style={styles.btnSolidText}>Créer l'Admin</Text></>
-                            }
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            </View>
-        </Modal>
-    );
-}
-
-function RejectRequestModal({ visible, userName, loading, onCancel, onConfirm }) {
-    const [reason, setReason] = useState('');
-    const [error, setError]   = useState('');
-
-    const handleConfirm = () => {
-        if (!reason.trim()) { setError('Veuillez indiquer une raison'); return; }
-        setError('');
-        onConfirm(reason.trim());
-    };
-
-    const handleCancel = () => { setReason(''); setError(''); onCancel(); };
-
-    return (
-        <Modal visible={visible} animationType="slide" transparent>
-            <View style={styles.overlayBottom}>
-                <View style={styles.sheetBox}>
-                    <LinearGradient colors={['#ff3b30', '#cc2200']} style={styles.sheetHeader}>
-                        <View style={styles.sheetHeaderLeft}>
-                            <View style={styles.sheetIconWrap}>
-                                <Ionicons name="close-circle" size={22} color="#fff" />
-                            </View>
-                            <View>
-                                <Text style={styles.sheetTitle}>Rejeter la demande</Text>
-                                <Text style={styles.sheetSubtitle}>{userName}</Text>
-                            </View>
-                        </View>
-                        <TouchableOpacity style={styles.sheetCloseBtn} onPress={handleCancel}>
-                            <Ionicons name="close" size={20} color="rgba(255,255,255,0.8)" />
-                        </TouchableOpacity>
-                    </LinearGradient>
-                    <View style={styles.sheetBody}>
-                        <Text style={styles.formLabel}>Raison du rejet *</Text>
-                        <View style={[styles.textAreaWrap, error ? styles.inputError : null]}>
-                            <TextInput
-                                style={styles.textArea}
-                                placeholder="Ex: Paiement non reçu, informations incomplètes..."
-                                placeholderTextColor="#bbb"
-                                multiline
-                                numberOfLines={4}
-                                value={reason}
-                                onChangeText={v => { setReason(v); setError(''); }}
-                            />
-                        </View>
-                        {error ? <Text style={styles.errorText}>{error}</Text> : null}
-                    </View>
-                    <View style={styles.sheetFooter}>
-                        <TouchableOpacity style={styles.btnOutline} onPress={handleCancel} disabled={loading}>
-                            <Text style={styles.btnOutlineText}>Annuler</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[styles.btnSolid, { backgroundColor: '#ff3b30' }]}
-                            onPress={handleConfirm}
-                            disabled={loading}
-                        >
-                            {loading
-                                ? <ActivityIndicator size="small" color="#fff" />
-                                : <><Ionicons name="close-circle" size={16} color="#fff" />
-                                   <Text style={styles.btnSolidText}>Rejeter</Text></>
-                            }
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            </View>
-        </Modal>
-    );
-}
-
-function SubscriptionsTab({ requests, loading, processingId, onApprove, onReject, onRefresh }) {
-    const [filter, setFilter] = useState('pending');
-    
-    const filtered = requests.filter(r => 
-        filter === 'all' ? true : r.status === filter
-    );
-
-    const planColors = {
-        free:       '#999',
-        basic:      '#007aff',
-        premium:    '#ff9500',
-        enterprise: '#6c2bd9'
-    };
-
-    if (loading) return (
-        <View style={{ padding: 40, alignItems: 'center' }}>
-            <ActivityIndicator size="large" color="#6c2bd9" />
-            <Text style={{ marginTop: 12, color: '#999' }}>Chargement...</Text>
-        </View>
-    );
-
-    return (
-        <View style={styles.tabContent}>
-            <View style={styles.tabHeader}>
-                <Text style={styles.sectionTitle}>
-                    💳 Demandes ({requests.filter(r => r.status === 'pending').length} en attente)
-                </Text>
-                <TouchableOpacity onPress={onRefresh} style={styles.refreshBtn}>
-                    <Ionicons name="refresh" size={18} color="#6c2bd9" />
-                </TouchableOpacity>
-            </View>
-
-            {/* Filtre */}
-            <View style={subStyles.filterRow}>
-                {['pending', 'approved', 'rejected', 'all'].map(f => (
-                    <TouchableOpacity
-                        key={f}
-                        style={[subStyles.filterBtn, filter === f && subStyles.filterBtnActive]}
-                        onPress={() => setFilter(f)}
-                    >
-                        <Text style={[subStyles.filterBtnText, filter === f && subStyles.filterBtnTextActive]}>
-                            {f === 'pending' ? '⏳ Attente' :
-                             f === 'approved' ? '✅ Approuvé' :
-                             f === 'rejected' ? '❌ Rejeté' : '📋 Tous'}
-                        </Text>
-                    </TouchableOpacity>
-                ))}
-            </View>
-
-            {filtered.length === 0 ? (
-                <View style={{ alignItems: 'center', paddingVertical: 40 }}>
-                    <Text style={{ fontSize: 40, marginBottom: 12 }}>📭</Text>
-                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#333' }}>
-                        Aucune demande
-                    </Text>
-                    <Text style={{ color: '#999', marginTop: 4 }}>
-                        {filter === 'pending' ? 'Aucune demande en attente' : `Aucune demande "${filter}"`}
-                    </Text>
-                </View>
-            ) : (
-                filtered.map(req => {
-                    const isPending   = req.status === 'pending';
-                    const isProcessing = processingId === req.id;
-                    const fromColor   = planColors[req.currentPlan]   || '#999';
-                    const toColor     = planColors[req.requestedPlan] || '#999';
-
-                    return (
-                        <View key={req.id} style={[
-                            subStyles.requestCard,
-                            req.status === 'approved' && subStyles.requestCardApproved,
-                            req.status === 'rejected' && subStyles.requestCardRejected,
-                        ]}>
-                            {/* Header */}
-                            <View style={subStyles.requestHeader}>
-                                <View style={subStyles.requestAvatar}>
-                                    <Text style={subStyles.requestAvatarText}>
-                                        {req.user?.firstName?.[0]}{req.user?.lastName?.[0]}
-                                    </Text>
-                                </View>
-                                <View style={{ flex: 1 }}>
-                                    <Text style={subStyles.requestName}>
-                                        {req.user?.firstName} {req.user?.lastName}
-                                    </Text>
-                                    <Text style={subStyles.requestEmail}>{req.user?.email}</Text>
-                                </View>
-                                {/* Badge status */}
-                                <View style={[
-                                    subStyles.statusPill,
-                                    req.status === 'pending'  && { backgroundColor: '#fff3cd' },
-                                    req.status === 'approved' && { backgroundColor: '#d4edda' },
-                                    req.status === 'rejected' && { backgroundColor: '#f8d7da' },
-                                ]}>
-                                    <Text style={[
-                                        subStyles.statusPillText,
-                                        req.status === 'pending'  && { color: '#856404' },
-                                        req.status === 'approved' && { color: '#155724' },
-                                        req.status === 'rejected' && { color: '#721c24' },
-                                    ]}>
-                                        {req.status === 'pending'  ? '⏳ En attente' :
-                                         req.status === 'approved' ? '✅ Approuvé'   :
-                                         '❌ Rejeté'}
-                                    </Text>
-                                </View>
-                            </View>
-
-                            {/* Plan upgrade arrow */}
-                            <View style={subStyles.planRow}>
-                                <View style={[subStyles.planPill, { backgroundColor: fromColor + '20', borderColor: fromColor }]}>
-                                    <Text style={[subStyles.planPillText, { color: fromColor }]}>
-                                        {req.currentPlan?.toUpperCase()}
-                                    </Text>
-                                </View>
-                                <Ionicons name="arrow-forward" size={18} color="#999" />
-                                <View style={[subStyles.planPill, { backgroundColor: toColor + '20', borderColor: toColor }]}>
-                                    <Text style={[subStyles.planPillText, { color: toColor }]}>
-                                        {req.requestedPlan?.toUpperCase()}
-                                    </Text>
-                                </View>
-                                <Text style={subStyles.durationText}>
-                                    · {req.durationMonths} mois
-                                </Text>
-                            </View>
-
-                            {/* Date */}
-                            <Text style={subStyles.requestDate}>
-                                📅 {new Date(req.createdAt).toLocaleDateString('fr-FR', {
-                                    day: '2-digit', month: 'long', year: 'numeric'
-                                })}
-                            </Text>
-
-                            {/* Raison rejet */}
-                            {req.status === 'rejected' && req.rejectReason && (
-                                <View style={subStyles.rejectReasonBox}>
-                                    <Text style={subStyles.rejectReasonText}>
-                                        💬 {req.rejectReason}
-                                    </Text>
-                                </View>
-                            )}
-
-                            {/* Actions — uniquement si pending */}
-                            {isPending && (
-                                <View style={subStyles.requestActions}>
-                                    <TouchableOpacity
-                                        style={[subStyles.rejectBtn, isProcessing && { opacity: 0.5 }]}
-                                        onPress={() => onReject(req.id, `${req.user?.firstName} ${req.user?.lastName}`)}
-                                        disabled={isProcessing}
-                                    >
-                                        <Ionicons name="close" size={16} color="#ff3b30" />
-                                        <Text style={subStyles.rejectBtnText}>Rejeter</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                        style={[subStyles.approveBtn, isProcessing && { opacity: 0.5 }]}
-                                        onPress={() => onApprove(req.id)}
-                                        disabled={isProcessing}
-                                    >
-                                        {isProcessing
-                                            ? <ActivityIndicator size="small" color="#fff" />
-                                            : <>
-                                                <Ionicons name="checkmark" size={16} color="#fff" />
-                                                <Text style={subStyles.approveBtnText}>Approuver</Text>
-                                              </>
-                                        }
-                                    </TouchableOpacity>
-                                </View>
-                            )}
-                        </View>
-                    );
-                })
-            )}
-        </View>
-    );
-}
-// ============================================
-// ONGLETS
-// ============================================
-function StatsTab({ stats }) {
-    if (!stats) return <View style={styles.tabContent}><Text style={styles.emptyText}>Pas de stats disponibles</Text></View>;
-    return (
-        <View style={styles.tabContent}>
-            <Text style={styles.sectionTitle}>📊 Vue d'ensemble</Text>
-            <View style={styles.statsGrid}>
-                <StatCard icon="people"       label="Utilisateurs" value={stats.users?.total        || 0} color="#007aff" />
-                <StatCard icon="medkit"       label="Pharmacies"   value={stats.pharmacies?.total   || 0} color="#ff9500" />
-                <StatCard icon="alert-circle" label="En attente"   value={stats.pharmacies?.pending || 0} color="#ff3b30" />
-                <StatCard icon="person-add"   label="Nouveaux"     value={stats.users?.recent       || 0} color="#00b368" />
-            </View>
-        </View>
-    );
-}
-
-function UsersTab({ users, onDeleteUser, onSuspendUser, onUpdateRole, onCreateAdmin }) {
-    return (
-        <View style={styles.tabContent}>
-            <View style={styles.tabHeader}>
-                <Text style={styles.sectionTitle}>👤 Utilisateurs ({users.length})</Text>
-                <TouchableOpacity style={styles.addBtn} onPress={onCreateAdmin}>
-                    <Ionicons name="add" size={18} color="#fff" />
-                    <Text style={styles.addBtnText}>Admin</Text>
-                </TouchableOpacity>
-            </View>
-            {users.length === 0 ? (
-                <Text style={styles.emptyText}>Aucun utilisateur</Text>
-            ) : (
-                users.map(u => (
-                    <View key={u.id} style={[styles.card, u.isSuspended && styles.cardSuspended]}>
-                        <View style={styles.cardHeader}>
-                            <View style={[styles.cardAvatar, { backgroundColor: getRoleColor(u.role) + '20' }]}>
-                                <Text style={[styles.cardAvatarText, { color: getRoleColor(u.role) }]}>
-                                    {u.firstName?.[0]}{u.lastName?.[0]}
-                                </Text>
-                            </View>
-                            <View style={{ flex: 1 }}>
-                                <Text style={styles.cardTitle}>{u.firstName} {u.lastName}</Text>
-                                <Text style={styles.cardMeta}>{u.email}</Text>
-                            </View>
-                        </View>
-                        <View style={styles.cardFooter}>
-                            <View style={[styles.roleBadge, { backgroundColor: getRoleColor(u.role) }]}>
-                                <Text style={styles.roleBadgeText}>{u.role}</Text>
-                            </View>
-                            {u.isSuspended && (
-                                <View style={styles.suspendedBadge}>
-                                    <Ionicons name="ban" size={11} color="#ff9500" />
-                                    <Text style={styles.suspendedBadgeText}>Suspendu</Text>
-                                </View>
-                            )}
-                            {u.role === 'superadmin' && (
-                                <View style={styles.protectedBadge}>
-                                    <Ionicons name="shield" size={11} color="#6c2bd9" />
-                                    <Text style={styles.protectedText}>Protégé</Text>
-                                </View>
-                            )}
-                            {u.role !== 'superadmin' && (
-                                <View style={styles.cardActions}>
-                                    <TouchableOpacity
-                                        style={styles.actionBtn}
-                                        onPress={() => onUpdateRole(u.id, `${u.firstName} ${u.lastName}`, u.role)}
-                                    >
-                                        <Ionicons name="swap-horizontal" size={16} color="#007aff" />
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                        style={[styles.actionBtn, { backgroundColor: '#fff8f0', borderColor: '#ffe4cc' }]}
-                                        onPress={() => onSuspendUser(u.id, `${u.firstName} ${u.lastName}`)}
-                                    >
-                                        <Ionicons name="ban" size={16} color="#ff9500" />
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                        style={[styles.actionBtn, { backgroundColor: '#fff1f0', borderColor: '#ffd6d6' }]}
-                                        onPress={() => onDeleteUser(u.id, `${u.firstName} ${u.lastName}`)}
-                                    >
-                                        <Ionicons name="trash-outline" size={16} color="#ff3b30" />
-                                    </TouchableOpacity>
-                                </View>
-                            )}
-                        </View>
-                    </View>
-                ))
-            )}
-        </View>
-    );
-}
-
-function PharmaciesTab({ pharmacies, onValidate, onSuspend, selectedPharmacy, setSelectedPharmacy, subscriptionHistory, historyLoading, loadHistory }) {
-    return (
-        <View style={styles.tabContent}>
-            <Text style={styles.sectionTitle}>🏥 Pharmacies ({pharmacies.length})</Text>
-            {pharmacies.length === 0 ? (
-                <Text style={styles.emptyText}>Aucune pharmacie enregistrée</Text>
-            ) : (
-                pharmacies.map((ph) => {
-                    const isSelected   = selectedPharmacy?.id === ph.id;
-                    const statusColor  = getStatusColor(ph.status);
-                    return (
-                        <TouchableOpacity
-                            key={ph.id}
-                            activeOpacity={0.85}
-                            style={[
-                                styles.card,
-                                isSelected && styles.cardSelected,
-                                ph.status === 'suspended' && styles.cardSuspended,
-                            ]}
-                            onPress={() => {
-                                if (isSelected) {
-                                    // ✅ Désélectionner si on re-clique
-                                    setSelectedPharmacy(null);
-                                } else {
-                                    setSelectedPharmacy(ph);
-                                    loadHistory(ph.id);
-                                }
-                            }}
-                        >
-                            <View style={styles.cardHeader}>
-                                <View style={[styles.cardAvatar, { backgroundColor: '#ff950020' }]}>
-                                    <Text style={[styles.cardAvatarText, { color: '#ff9500' }]}>
-                                        {ph.name?.[0] || 'P'}
-                                    </Text>
-                                </View>
-                                <View style={{ flex: 1 }}>
-                                    <Text style={styles.cardTitle}>{ph.name}</Text>
-                                    <Text style={styles.cardMeta}>📍 {ph.city || ph.address?.city || '—'}</Text>
-                                </View>
-                                {/* Chevron pour indiquer que la carte est cliquable */}
-                                <Ionicons
-                                    name={isSelected ? 'chevron-up' : 'chevron-down'}
-                                    size={18}
-                                    color="#999"
-                                />
-                            </View>
-
-                            <View style={styles.cardFooter}>
-                                <View style={[styles.statusBadge, { backgroundColor: statusColor.bg }]}>
-                                    <Text style={[styles.statusBadgeText, { color: statusColor.text }]}>
-                                        {ph.status === 'pending' ? 'En attente' : ph.status === 'active' ? 'Active' : 'Suspendue'}
-                                    </Text>
-                                </View>
-                                <View style={styles.cardActions}>
-                                    {ph.status === 'pending' && (
-                                        <TouchableOpacity
-                                            style={styles.actionBtnSuccess}
-                                            onPress={(e) => { e.stopPropagation?.(); onValidate(ph); }}
-                                        >
-                                            <Ionicons name="checkmark-circle-outline" size={20} color="#2e7d32" />
-                                        </TouchableOpacity>
-                                    )}
-                                    {ph.status !== 'suspended' && (
-                                        <TouchableOpacity
-                                            style={styles.actionBtnWarning}
-                                            onPress={(e) => { e.stopPropagation?.(); onSuspend(ph); }}
-                                        >
-                                            <Ionicons name="ban" size={18} color="#ff9500" />
-                                        </TouchableOpacity>
-                                    )}
-                                </View>
-                            </View>
-
-                            {/* ✅ Section historique — visible uniquement si sélectionnée */}
-                            {isSelected && (
-                                <View style={styles.historySection}>
-                                    <Text style={styles.historyTitle}>📋 Historique abonnements</Text>
-                                    {historyLoading ? (
-                                        <ActivityIndicator size="small" color="#6c2bd9" style={{ marginVertical: 12 }} />
-                                    ) : subscriptionHistory.length === 0 ? (
-                                        <Text style={styles.emptyHistory}>Aucun abonnement enregistré</Text>
-                                    ) : (
-                                        subscriptionHistory.map((sub, i) => (
-                                            <View key={sub.id || i} style={styles.subscriptionItem}>
-                                                <View style={styles.subLine}>
-                                                    <Text style={styles.subPlan}>{sub.plan || sub.type || '—'}</Text>
-                                                    <Text style={[styles.subStatus, { color: sub.status === 'active' ? '#2e7d32' : '#d32f2f' }]}>
-                                                        {sub.status}
-                                                    </Text>
-                                                </View>
-                                                <Text style={styles.subDates}>
-                                                    {sub.startDate ? new Date(sub.startDate).toLocaleDateString('fr-FR') : '—'}
-                                                    {' → '}
-                                                    {sub.endDate ? new Date(sub.endDate).toLocaleDateString('fr-FR') : 'en cours'}
-                                                </Text>
-                                                {sub.amount && (
-                                                    <Text style={styles.subPrice}>{sub.amount} €</Text>
-                                                )}
-                                            </View>
-                                        ))
-                                    )}
-                                </View>
-                            )}
-                        </TouchableOpacity>
-                    );
-                })
-            )}
-        </View>
-    );
-}
-
-function StatCard({ icon, label, value, color }) {
-    return (
-        <View style={[styles.statCard, { borderLeftColor: color }]}>
-            <Ionicons name={icon} size={24} color={color} />
-            <Text style={styles.statValue}>{value}</Text>
-            <Text style={styles.statLabel}>{label}</Text>
-        </View>
-    );
-}
 
 function getStatusColor(status) {
     if (status === 'pending')   return { bg: '#fff3cd', text: '#856404' };
@@ -1355,10 +530,6 @@ const styles = StyleSheet.create({
     addBtn:             { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#6c2bd9', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },
     addBtnText:         { fontSize: 13, fontWeight: '700', color: '#fff' },
     emptyText:          { fontSize: 14, color: '#999', textAlign: 'center', marginTop: 20 },
-    statsGrid:          { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-    statCard:           { width: '48%', backgroundColor: '#fff', borderRadius: 12, padding: 16, borderLeftWidth: 4 },
-    statValue:          { fontSize: 28, fontWeight: '800', color: '#333', marginTop: 8 },
-    statLabel:          { fontSize: 13, color: '#666', marginTop: 4 },
     card:               { backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 12 },
     cardSuspended:      { opacity: 0.7, borderWidth: 1.5, borderColor: '#ffe4cc' },
     cardSelected:       { borderWidth: 2, borderColor: '#6c2bd9', backgroundColor: '#faf8ff' },

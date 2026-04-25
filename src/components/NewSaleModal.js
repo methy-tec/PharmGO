@@ -1,8 +1,3 @@
-// ============================================
-// 🛒 MODAL NOUVELLE VENTE (TRAVAILLEUR)
-// src/screens/worker/NewSaleModal.js
-// ============================================
-
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -22,6 +17,8 @@ import { Ionicons } from '@expo/vector-icons';
 import WorkerService from '../services/WorkerService';
 import Toast from './Toast';
 import { COLORS, FONTS, SPACING, RADIUS } from '../constants/theme';
+
+import PrintReceiptModal from './modals/PrintReceiptModal';
 
 const PAYMENT_METHODS = [
   { value: 'cash', label: 'Espèces', icon: 'cash' }
@@ -48,6 +45,10 @@ export default function NewSaleModal({ visible, onClose, onSuccess }) {
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // Print Receipt Modal
+  const [showPrintModal, setShowPrintModal] = useState(false);
+  const [lastSaleData, setLastSaleData] = useState(null);
 
   // Toast
   const [toast, setToast] = useState(null);
@@ -193,8 +194,13 @@ export default function NewSaleModal({ visible, onClose, onSuccess }) {
       const response = await WorkerService.createSale(saleData);
 
       if (response.success) {
+        // Prepare le donnees pour le recu
+        setLastSaleData({cart, customerData, customerMode, guestName, guestPhone, paymentMethod, notes, total: getTotalAmount(),});
+
+        setShowPrintModal(true);
+
         showToast('success', '✅ Vente enregistrée !', `Montant total: ${getTotalAmount().toLocaleString()} FCFA`);
-        setTimeout(() => { onSuccess(); onClose(); }, 1500);
+        
       }
     } catch (error) {
       console.error('Erreur submitSale:', error);
@@ -549,6 +555,18 @@ export default function NewSaleModal({ visible, onClose, onSuccess }) {
             />
           )
         }
+        {/* PRINT RECEIPT MODAL */}
+        <PrintReceiptModal
+          visible={showPrintModal}
+          saleData={lastSaleData}
+          onClose={() => {
+            setShowPrintModal(false);
+            onSuccess();
+            handleClose();
+          }}
+        />
+
+
 
         {/* BOUTONS NAVIGATION */}
         <View style={styles.footer}>

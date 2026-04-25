@@ -103,6 +103,33 @@ const authService = {
             throw error.response?.data || { success: false, message: 'Code invalide' };
         }
     },
+    resetPassword: async (email, newPassword) => {
+        try{
+            const response = await api.post('/auth/reset-password', { email, newPassword });
+            return response.data;
+        }catch(error){
+            console.error('Erreur lors de la réinitialisation de mot de passe:', error.response?.data || error.message);
+            throw error.response?.data || { success: false, message: 'Erreur de réinitialisation de mot de passe' };
+        }
+    },
+    verifyResetCode: async (email, code) =>{
+      try{
+        const response = await api.post('/auth/verify-reset-code', { email, code });
+        return response.data;
+      }catch(error){
+        console.error('Erreur lors de la verification du code de réinitialisation:', error.response?.data || error.message);
+        throw error.response?.data || { success: false, message: 'Erreur de verification de code de réinitialisation' };
+      }
+    },
+    setNewPassword: async(email, code, newPassword) => {
+      try{
+        const response = await api.post('/auth/set-new-password', { email, code, newPassword });
+        return response.data;
+      }catch(error){
+        console.error('Erreur lors de la réinitialisation de mot de passe:', error.response?.data || error.message);
+        throw error.response?.data || { success: false, message: 'Erreur de réinitialisation de mot de passe' };
+      }
+    },
     changeEmail: async (newEmail) => {
         try{
             const response = await api.put('/auth/change-email', { newEmail });
@@ -211,6 +238,15 @@ processSubscriptionRequest: async (id, body) => {
       return response.data;
     } catch (error) {
       console.error('Erreur suspendUser:', error.response?.data || error.message);
+      throw error.response?.data || { success: false, message: 'Erreur' };
+    }
+  },
+  activeUser: async (userId) => {
+    try {
+      const response = await api.post(`/superadmin/users/${userId}/active`);
+      return response.data;
+    } catch (error) {
+      console.error('Erreur activeUser:', error.response?.data || error.message);
       throw error.response?.data || { success: false, message: 'Erreur' };
     }
   },

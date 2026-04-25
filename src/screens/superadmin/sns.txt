@@ -1,0 +1,1607 @@
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, Alert, Modal, TextInput } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import authService from '../../services/AuthService';
+import AuthContext, { useAuth } from '../../context/AuthContext';
+import { COLORS, FONTS, SPACING, RADIUS } from '../../constants/theme';
+import Toast from '../../components/Toast';
+
+const ROLES = ['user', 'pharmacie', 'admin'];
+
+export default function SuperAdminScreens(){
+    const { user, logout, getGlobalStats, getAllUsers, getAllPharmacies, validatePharmacy, suspendPharmacy, getSubscriptionHistory} = useAuth();
+    const [logoutModal, setLogoutModal] = useState(false);
+
+    const [activeTab, setActiveTab] = useState('stats');
+    const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+
+    const [stats, setStats]  = useState(null);
+    const [users, setUsers] = useState([]);
+    const [pharmacies, setPharmacies] = useState([]);
+    
+    // Pharmacies states
+    const [selectedPharmacy, setSelectedPharmacy] = useState(null);
+    const [subscriptionHistory, setSubscriptionHistory] = useState([]);
+    const [historyLoading, setHistoryLoading] = useState(false);
+    
+    // ✅ FIX : pharmacyName (pas name) dans le state
+    const [pharmacyModal, setPharmacyModal] = useState({
+        visible: false,
+        type: null,
+        pharmacyId: null,
+        pharmacyName: ''   // ← était 'name', corrigé en 'pharmacyName'
+    });
+
+    // Modals users
+    const [createAdminModal, setCreateAdminModal] = useState(false);
+    const [deleteModal,  setDeleteModal]  = useState({ visible: false, userId: null, userName: '' });
+    const [suspendModal, setSuspendModal] = useState({ visible: false, userId: null, userName: '' });
+    // Ajouter ces states manquants en haut du composant
+    const [activeModal, setActiveModal] = useState({ visible: false, userId: null, userName: '' });
+    const [active, setActive] = useState(false);
+    const [roleModal,    setRoleModal]    = useState({ visible: false, userId: null, userName: '', currentRole: '' });
+
+    // Loading states
+    const [deleting,         setDeleting]          = useState(false);
+    const [suspending,       setSuspending]         = useState(false);
+    const [updatingRole,     setUpdatingRole]       = useState(false);
+    const [pharmacyActionLoading, setPharmacyActionLoading] = useState(false);
+
+    // Toast state
+    const [toast, setToast] = useState(null);
+
+    // ── SUBSCRIPTIONS ────────────────────────────────────────────────────────
+    const [subscriptionsRequests, setSubscriptionsRequests] = useState([]);
+    const [subRequestsLoading, setSubRequestsLoading] = useState(false);
+    const [processingRequestId, setProcessingRequestId] = useState(null);
+    const [rejectModal, setRejectModal] = useState({ visible: false, requestId: null, userName: '' });
+    
+    const showToast = (type, title, message) => {
+        setToast({ type, title, message, duration: 4000 });
+    }
+
+    // Ajoute ce useEffect séparé pour le chargement initial
+    useEffect(() => { loadDashboardData(); }, []);
+
+    useEffect(() => {
+        if(activeTab === 'subscriptions') loadSubscriptionsRequests();
+    }, [activeTab]);
+
+
+    const loadDashboardData = async () => {
+        try {
+            setLoading(true);
+            const [statsRes, usersRes, pharmaciesRes] = await Promise.all([
+                getGlobalStats(),
+                getAllUsers({ limit: 20 }),
+                getAllPharmacies({ limit: 30 })
+            ]);
+            setStats(statsRes.data);
+            setUsers(usersRes.data.users || []);
+            setPharmacies(pharmaciesRes.data.pharmacies || []);
+        } catch(error) {
+            showToast('error', 'Erreur', error.message || 'Impossible de charger les données');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const loadSubscriptionsRequests = async () => {
+        try {
+            setSubRequestsLoading(true);
+            const res = await authService.getSubscriptionRequests({ status: 'all' }); // ← CORRECT
+            setSubscriptionsRequests(res.data?.requests || []);
+        } catch(error) {
+            showToast('error', 'Erreur', error.message || 'Impossible de charger les demandes');
+        } finally {
+            setSubRequestsLoading(false);
+        }
+    };
+    const handleApproveRequest = async (requestId) => {
+        try {
+            setProcessingRequestId(requestId);
+            await authService.processSubscriptionRequest(requestId, { action: 'approve' });
+            setSubscriptionsRequests(prev => 
+                prev.map(r => r.id === requestId ? { ...r, status: 'approved' } : r)
+            )
+            showToast('success', '✅ Succès', 'Demande d\'abonnement approuvée avec succès');
+            loadSubscriptionsRequests();
+        } catch(error) {
+            showToast('error', 'Erreur', error.message || 'Impossible d\'approuver la demande d\'abonnement');
+        } finally {
+            setProcessingRequestId(null);
+        }
+    }
+
+    const handleRejectRequest = async (requestId, rejectReason) => {
+        try{
+            setProcessingRequestId(requestId);
+            await authService.processSubscriptionRequest(requestId, { action: 'reject', rejectReason });
+
+            setSubscriptionsRequests(prev => 
+                prev.map(r => r.id === requestId ? { ...r, status: 'rejected' } : r)
+            )
+            setRejectModal({ visible: false, requestId: null, userName: ''});
+            showToast('success', '✅ Succès', 'Demande d\'abonnement rejetée avec succès');
+            loadSubscriptionsRequests();
+        } catch(error) {
+            showToast('error', 'Erreur', error.message || 'Impossible de rejeter la demande d\'abonnement');
+        } finally {
+            setProcessingRequestId(null);
+        }
+    }
+
+    const onRefresh = async () => {
+        setRefreshing(true);
+        await loadDashboardData();
+        setRefreshing(false);
+    };
+
+    // ── PHARMACIES ACTIONS ───────────────────────────────────────────────────
+    const handleValidate = (pharmacy) => {
+        setPharmacyModal({
+            visible: true,
+            type: 'validate',
+            pharmacyId: pharmacy.id,
+            pharmacyName: pharmacy.name   // ✅ pharmacyName
+        });
+    };
+
+    const handleSuspend = (pharmacy) => {
+        setPharmacyModal({
+            visible: true,
+            type: 'suspend',
+            pharmacyId: pharmacy.id,
+            pharmacyName: pharmacy.name   // ✅ pharmacyName
+        });
+    };
+
+    const closePharmacyModal = () =>
+        setPharmacyModal({ visible: false, type: null, pharmacyId: null, pharmacyName: '' });
+
+    // ✅ FIX : la raison n'est requise que pour 'suspend', pas 'validate'
+    const confirmPharmacyAction = async (reason = '') => {
+        const { type, pharmacyId } = pharmacyModal;
+        setPharmacyActionLoading(true);
+        try {
+            if (type === 'validate') {
+                await validatePharmacy(pharmacyId);
+                setPharmacies(prev =>
+                    prev.map(p => p.id === pharmacyId ? { ...p, status: 'active', isValidated: true } : p)
+                );
+                closePharmacyModal();
+                showToast('success', '✅ Succès', 'Pharmacie validée avec succès');
+            } else if (type === 'suspend') {
+                // La validation de la raison est faite dans le modal lui-même
+                await suspendPharmacy(pharmacyId, reason);
+                setPharmacies(prev =>
+                    prev.map(p => p.id === pharmacyId ? { ...p, status: 'suspended', isSuspended: true } : p)
+                );
+                closePharmacyModal();
+                showToast('success', '✅ Succès', 'Pharmacie suspendue');
+            }
+        } catch(err) {
+            showToast('error', 'Erreur', err.message || 'Impossible de valider/suspendre');
+        } finally {
+            setPharmacyActionLoading(false);
+        }
+    };
+
+    const loadSubscriptionHistoryForPharmacy = async (pharmacyId) => {
+        try {
+            setHistoryLoading(true);
+            const res = await getSubscriptionHistory({ pharmacyId });
+            setSubscriptionHistory(res.data?.subscriptions || []);
+        } catch(err) {
+            console.error(err);
+            setSubscriptionHistory([]);
+        } finally {
+            setHistoryLoading(false);
+        }
+    };
+
+    // ── DELETE ───────────────────────────────────────────────────────────────
+    const handleDeleteUser = (userId, userName) =>
+        setDeleteModal({ visible: true, userId, userName });
+
+    const confirmDelete = async () => {
+        try {
+            setDeleting(true);
+            await authService.deleteUser(deleteModal.userId);
+            setUsers(prev => prev.filter(u => u.id !== deleteModal.userId));
+            setDeleteModal({ visible: false, userId: null, userName: '' });
+            showToast('success', '✅ Succès', 'Utilisateur supprimé');
+        } catch (error) {
+            showToast('error', 'Erreur', error.message || 'Impossible de supprimer');
+        } finally {
+            setDeleting(false);
+        }
+    };
+
+    // ── SUSPEND USER et Active ─────────────────────────────────────────────────────────
+    const handleSuspendUser = (userId, userName) =>
+        setSuspendModal({ visible: true, userId, userName });
+
+    const confirmSuspend = async (reason) => {
+        try {
+            setSuspending(true);
+            await authService.suspendUser(suspendModal.userId, reason);
+            
+            setUsers(prev => prev.map(u =>
+                u.id === suspendModal.userId 
+                    ? { ...u, isSuspended: true, status: 'suspended' } : u
+            ));
+
+            setSuspendModal({ visible: false, userId: null, userName: '' });
+            showToast('success', '✅ Succès', 'Utilisateur suspendu');
+        } catch (error) {
+            showToast('error', 'Erreur', error.message || 'Impossible de suspendre');
+        } finally {
+            setSuspending(false);
+        }
+    };
+
+    const handleActiveUser = (userId, userName) =>
+        setActiveModal({ visible: true, userId, userName });
+
+    const confirmActive = async () => {
+        try {
+            setActive(true);
+            await authService.activeUser(activeModal.userId);
+            setUsers(prev => prev.map(u =>
+                u.id === activeModal.userId ? { ...u, isSuspended: false, status: 'active' } : u
+            ));
+            setActiveModal({ visible: false, userId: null, userName: '' });
+            showToast('success', '✅ Succès', 'Utilisateur actif');
+        } catch (error) {
+            showToast('error', 'Erreur', error.message || 'Impossible d activer');
+        } finally {
+            setActive(false);
+        }
+    };
+
+    // ── UPDATE ROLE ──────────────────────────────────────────────────────────
+    const handleUpdateRole = (userId, userName, currentRole) =>
+        setRoleModal({ visible: true, userId, userName, currentRole });
+
+    const confirmUpdateRole = async (newRole) => {
+        try {
+            setUpdatingRole(true);
+            await authService.updateUserRole(roleModal.userId, newRole);
+            setUsers(prev => prev.map(u =>
+                u.id === roleModal.userId ? { ...u, role: newRole } : u
+            ));
+            setRoleModal({ visible: false, userId: null, userName: '', currentRole: '' });
+            showToast('success', '✅ Succès', 'Rôle modifié avec succès');
+        } catch (error) {
+            showToast('error', 'Erreur', error.message || 'Impossible de modifier le rôle');
+        } finally {
+            setUpdatingRole(false);
+        }
+    };
+
+    // ── CREATE ADMIN ─────────────────────────────────────────────────────────
+    const handleAdminCreated = (newAdmin) => {
+        setUsers(prev => [newAdmin, ...prev]);
+        setCreateAdminModal(false);
+        showToast('success', '✅ Succès', 'Admin créé avec succès');
+    };
+
+    if (loading) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#6c2bd9"/>
+                <Text style={styles.loadingText}>Chargement...</Text>
+            </View>
+        );
+    }
+
+    return (
+        <View style={styles.container}>
+            <LinearGradient colors={['#6c2bd9', '#9c27b0']} style={styles.header}>
+                <View style={styles.headerTop}>
+                    <View>
+                        <Text style={styles.headerTitle}>Système de contrôle</Text>
+                        <Text style={styles.headerSubtitle}>Contrôle total de Pharma Go</Text>
+                    </View>
+                    <View style={styles.headerActions}>
+                        {activeTab === 'users' && (
+                            <TouchableOpacity style={styles.createAdminBtn} onPress={() => setCreateAdminModal(true)}>
+                                <Ionicons name="person-add" size={16} color="#6c2bd9" />
+                                <Text style={styles.createAdminBtnText}>+ Admin</Text>
+                            </TouchableOpacity>
+                        )}
+                        <TouchableOpacity style={styles.logoutBtn} onPress={() => setLogoutModal(true)}>
+                            <Ionicons name="log-out-outline" size={22} color="#fff" />
+                        </TouchableOpacity>
+                    </View>
+                </View>
+
+                <View style={styles.userInfo}>
+                    <View style={styles.avatar}>
+                        <Text style={styles.avatarText}>{user?.firstName?.[0]}{user?.lastName?.[0]}</Text>
+                    </View>
+                    <View>
+                        <Text style={styles.userName}>{user?.firstName} {user?.lastName}</Text>
+                        <Text style={styles.userEmail}>{user?.email}</Text>
+                    </View>
+                </View>
+
+                <View style={styles.tabs}>
+                    {['stats', 'users', 'pharmacies', 'subscriptions'].map((tab) => (
+                        <TouchableOpacity
+                            key={tab}
+                            style={[styles.tab, activeTab === tab && styles.tabActive]}
+                            onPress={() => setActiveTab(tab)}
+                        >
+                            <Ionicons
+                                name={
+                                    tab === 'stats' ? 'stats-chart' : 
+                                    tab === 'users' ? 'people' : 
+                                    tab === 'pharmacies' ? 'medkit' : 
+                                    'card'
+                                }
+                                size={20}
+                                color={activeTab === tab ? '#fff' : 'rgba(255,255,255,0.6)'}
+                            />
+                            <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
+                                {tab === 'stats' ? 'Stats' :
+                                 tab === 'users' ? 'Users' :
+                                 tab === 'pharmacies' ? 'Pharmas':
+                                 'Abonnements'
+                                }
+                            </Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            </LinearGradient>
+
+            <ScrollView
+                style={styles.content}
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+            >
+                {activeTab === 'stats' && <StatsTab stats={stats} />}
+                {activeTab === 'users' && (
+                    <UsersTab
+                        users={users}
+                        onDeleteUser={handleDeleteUser}
+                        onSuspendUser={handleSuspendUser}
+                        onActiveUser={handleActiveUser}
+                        onUpdateRole={handleUpdateRole}
+                        onCreateAdmin={() => setCreateAdminModal(true)}
+                    />
+                )}
+                {activeTab === 'pharmacies' && (
+                    <PharmaciesTab
+                        pharmacies={pharmacies}
+                        onValidate={handleValidate}
+                        onSuspend={handleSuspend}
+                        selectedPharmacy={selectedPharmacy}
+                        setSelectedPharmacy={(ph) => {
+                            setSelectedPharmacy(ph);
+                            // ✅ reset history quand on déselectionne
+                            if (!ph) setSubscriptionHistory([]);
+                        }}
+                        subscriptionHistory={subscriptionHistory}
+                        historyLoading={historyLoading}
+                        loadHistory={loadSubscriptionHistoryForPharmacy}
+                    />
+                )}
+                {activeTab === 'subscriptions' && (
+                    <SubscriptionsTab
+                        requests={subscriptionsRequests}
+                        loading={subRequestsLoading}
+                        processingId={processingRequestId}
+                        onApprove={handleApproveRequest}
+                        onReject={(id, name) => setRejectModal({ visible: true, requestId: id, userName: name })}
+                        onRefresh={loadSubscriptionsRequests}
+                    />
+                )}
+                <View style={{ height: 120 }} />
+            </ScrollView>
+            {
+                            toast && (
+                                <Toast
+                                    toast={toast}
+                                    onDismiss={() => setToast(null)}
+                                />
+                            )
+                        }
+
+            <CreateAdminModal
+                visible={createAdminModal}
+                onClose={() => setCreateAdminModal(false)}
+                onSuccess={handleAdminCreated}
+            />
+            <ConfirmDeleteModal
+                visible={deleteModal.visible}
+                userName={deleteModal.userName}
+                loading={deleting}
+                onCancel={() => setDeleteModal({ visible: false, userId: null, userName: '' })}
+                onConfirm={confirmDelete}
+            />
+            <SuspendModal
+                visible={suspendModal.visible}
+                userName={suspendModal.userName}
+                loading={suspending}
+                onCancel={() => setSuspendModal({ visible: false, userId: null, userName: '' })}
+                onConfirm={confirmSuspend}
+            />
+            <ActiveModal
+                visible={activeModal.visible}
+                userName={activeModal.userName}
+                loading={active}
+                onCancel={() => setActiveModal({ visible: false, userId: null, userName: '' })}
+                onConfirm={confirmActive}
+            />
+            <UpdateRoleModal
+                visible={roleModal.visible}
+                userName={roleModal.userName}
+                currentRole={roleModal.currentRole}
+                loading={updatingRole}
+                onCancel={() => setRoleModal({ visible: false, userId: null, userName: '', currentRole: '' })}
+                onConfirm={confirmUpdateRole}
+            />
+
+            {/* ✅ FIX : pharmacyName (pas name) */}
+            <PharmacyActionModal
+                visible={pharmacyModal.visible}
+                type={pharmacyModal.type}
+                pharmacyName={pharmacyModal.pharmacyName}
+                loading={pharmacyActionLoading}
+                onClose={closePharmacyModal}
+                onConfirm={confirmPharmacyAction}
+            />
+            <RejectRequestModal
+                visible={rejectModal.visible}
+                userName={rejectModal.userName}
+                loading={processingRequestId === rejectModal.requestId}
+                onCancel={() => setRejectModal({ visible: false, requestId: null, userName: '' })}
+                onConfirm={(reason) => handleRejectRequest(rejectModal.requestId, reason)}
+            />
+            <ConfirmLogoutModal
+                visible={logoutModal}
+                onCancel={() => setLogoutModal(false)}
+                onConfirm={() => { setLogoutModal(false); logout(); }}
+            />
+        </View>
+    );
+}
+
+// ============================================
+// MODAL — CONFIRM LOGOUT
+// ============================================
+function ConfirmLogoutModal({ visible, onCancel, onConfirm }) {
+    return (
+        <Modal visible={visible} animationType="fade" transparent>
+            <View style={styles.overlay}>
+                <View style={styles.confirmBox}>
+                    <View style={[styles.confirmIconWrap, { backgroundColor: '#fff1f0' }]}>
+                        <Ionicons name="log-out-outline" size={32} color="#ff3b30" />
+                    </View>
+                    <Text style={styles.confirmTitle}>Se déconnecter</Text>
+                    <Text style={styles.confirmMsg}>
+                        {'Êtes-vous sûr de vouloir vous déconnecter\nde '}
+                        <Text style={styles.confirmBold}>Pharma Go</Text>
+                        {' ?'},
+                    </Text>
+                    <Text style={styles.confirmMsg}>
+                        {'Sachez que vous serez obligé à vous reconnecter pour accéder à la plateforme.'}
+                    </Text>
+                    <View style={styles.confirmRow}>
+                        <TouchableOpacity style={styles.btnOutline} onPress={onCancel}>
+                            <Text style={styles.btnOutlineText}>Annuler</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.btnSolid, { backgroundColor: '#ff3b30' }]}
+                            onPress={onConfirm}
+                        >
+                            <Ionicons name="log-out-outline" size={18} color="#fff" />
+                            <Text style={styles.btnSolidText}>Déconnecter</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </View>
+        </Modal>
+    );
+}
+
+// ============================================
+// MODAL — PHARMACY ACTION (Valider / Suspendre)
+// ============================================
+function PharmacyActionModal({ visible, type, pharmacyName, loading, onClose, onConfirm }) {
+    const [reason, setReason] = useState('');
+    const [error, setError]   = useState('');
+
+    // ✅ FIX : isSuspend = true quand on SUSPEND (logique correcte)
+    const isSuspend = type === 'suspend';
+
+    // Reset à chaque ouverture
+    useEffect(() => {
+        if (visible) { setReason(''); setError(''); }
+    }, [visible]);
+
+    const handleConfirm = () => {
+        // ✅ La raison n'est requise QUE pour la suspension
+        if (isSuspend && !reason.trim()) {
+            setError('Veuillez indiquer une raison');
+            return;
+        }
+        setError('');
+        onConfirm(isSuspend ? reason.trim() : '');
+    };
+
+    return (
+        <Modal visible={visible} animationType="fade" transparent>
+            <View style={styles.overlay}>
+                <View style={styles.confirmBox}>
+                    {/* Icône */}
+                    <View style={[styles.confirmIconWrap, {
+                        backgroundColor: isSuspend ? '#fff8f0' : '#f0fff4'
+                    }]}>
+                        <Ionicons
+                            name={isSuspend ? 'ban' : 'checkmark-circle-outline'}
+                            size={36}
+                            color={isSuspend ? '#ff9500' : '#00b368'}
+                        />
+                    </View>
+
+                    {/* Titre */}
+                    <Text style={styles.confirmTitle}>
+                        {isSuspend ? 'Suspendre' : 'Valider'} la pharmacie
+                    </Text>
+
+                    {/* Message */}
+                    <Text style={styles.confirmMsg}>
+                        {isSuspend
+                            ? 'Êtes-vous sûr de vouloir suspendre\n'
+                            : 'Confirmer la validation de\n'
+                        }
+                        <Text style={styles.confirmBold}>{pharmacyName}</Text>
+                        {isSuspend ? ' ?' : ' ?\nElle sera immédiatement active.'}
+                    </Text>
+
+                    {/* Champ raison — uniquement pour suspension */}
+                    {isSuspend && (
+                        <View style={{ width: '100%', marginBottom: 16 }}>
+                            <Text style={styles.formLabel}>Raison *</Text>
+                            <View style={[styles.textAreaWrap, error ? styles.inputError : null]}>
+                                <TextInput
+                                    style={styles.textArea}
+                                    multiline
+                                    numberOfLines={3}
+                                    placeholder="Motif de la suspension..."
+                                    placeholderTextColor="#bbb"
+                                    value={reason}
+                                    onChangeText={v => { setReason(v); setError(''); }}
+                                />
+                            </View>
+                            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+                        </View>
+                    )}
+
+                    {/* Boutons */}
+                    <View style={styles.confirmRow}>
+                        <TouchableOpacity style={styles.btnOutline} onPress={onClose} disabled={loading}>
+                            <Text style={styles.btnOutlineText}>Annuler</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.btnSolid, {
+                                backgroundColor: isSuspend ? '#ff9500' : '#00b368'
+                            }]}
+                            onPress={handleConfirm}
+                            disabled={loading}
+                        >
+                            {loading ? (
+                                <ActivityIndicator color="#fff" />
+                            ) : (
+                                <>
+                                    <Ionicons
+                                        name={isSuspend ? 'ban' : 'checkmark'}
+                                        size={18}
+                                        color="#fff"
+                                    />
+                                    <Text style={styles.btnSolidText}>
+                                        {isSuspend ? 'Suspendre' : 'Valider'}
+                                    </Text>
+                                </>
+                            )}
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </View>
+        </Modal>
+    );
+}
+
+// ============================================
+// MODAL — CONFIRM DELETE
+// ============================================
+function ConfirmDeleteModal({ visible, userName, loading, onCancel, onConfirm }) {
+    return (
+        <Modal visible={visible} animationType="fade" transparent>
+            <View style={styles.overlay}>
+                <View style={styles.confirmBox}>
+                    <View style={[styles.confirmIconWrap, { backgroundColor: '#fff1f0' }]}>
+                        <Ionicons name="trash" size={32} color="#ff3b30" />
+                    </View>
+                    <Text style={styles.confirmTitle}>Supprimer l'utilisateur</Text>
+                    <Text style={styles.confirmMsg}>
+                        {'Supprimer '}
+                        <Text style={styles.confirmBold}>{userName}</Text>
+                        {' ?\nCette action est irréversible.'}
+                    </Text>
+                    <View style={styles.confirmRow}>
+                        <TouchableOpacity style={styles.btnOutline} onPress={onCancel} disabled={loading}>
+                            <Text style={styles.btnOutlineText}>Annuler</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.btnSolid, { backgroundColor: '#ff3b30' }]} onPress={onConfirm} disabled={loading}>
+                            {loading
+                                ? <ActivityIndicator size="small" color="#fff" />
+                                : <><Ionicons name="trash-outline" size={16} color="#fff" /><Text style={styles.btnSolidText}>Supprimer</Text></>
+                            }
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </View>
+        </Modal>
+    );
+}
+
+// ============================================
+// MODAL — SUSPEND USER
+// ============================================
+function SuspendModal({ visible, userName, loading, onCancel, onConfirm }) {
+    const [reason, setReason] = useState('');
+    const [error, setError]   = useState('');
+
+    const handleConfirm = () => {
+        if (!reason.trim()) { setError('Veuillez indiquer une raison'); return; }
+        setError('');
+        onConfirm(reason.trim());
+    };
+
+    const handleCancel = () => { setReason(''); setError(''); onCancel(); };
+
+    return (
+        <Modal visible={visible} animationType="slide" transparent>
+            <View style={styles.overlayBottom}>
+                <View style={styles.sheetBox}>
+                    <LinearGradient colors={['#ff9500', '#ff6b00']} style={styles.sheetHeader}>
+                        <View style={styles.sheetHeaderLeft}>
+                            <View style={styles.sheetIconWrap}>
+                                <Ionicons name="ban" size={22} color="#fff" />
+                            </View>
+                            <View>
+                                <Text style={styles.sheetTitle}>Suspendre le compte</Text>
+                                <Text style={styles.sheetSubtitle}>{userName}</Text>
+                            </View>
+                        </View>
+                        <TouchableOpacity style={styles.sheetCloseBtn} onPress={handleCancel}>
+                            <Ionicons name="close" size={20} color="rgba(255,255,255,0.8)" />
+                        </TouchableOpacity>
+                    </LinearGradient>
+                    <View style={styles.sheetBody}>
+                        <View style={[styles.infoBanner, { backgroundColor: '#fff8f0' }]}>
+                            <Ionicons name="warning" size={16} color="#ff9500" />
+                            <Text style={[styles.infoBannerText, { color: '#c96a00' }]}>
+                                L'utilisateur ne pourra plus se connecter tant que son compte est suspendu.
+                            </Text>
+                        </View>
+                        <Text style={styles.formLabel}>Raison de la suspension *</Text>
+                        <View style={[styles.textAreaWrap, error ? styles.inputError : null]}>
+                            <TextInput
+                                style={styles.textArea}
+                                placeholder="Ex: Violation des conditions d'utilisation..."
+                                placeholderTextColor="#bbb"
+                                multiline
+                                numberOfLines={4}
+                                value={reason}
+                                onChangeText={v => { setReason(v); setError(''); }}
+                            />
+                        </View>
+                        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+                    </View>
+                    <View style={styles.sheetFooter}>
+                        <TouchableOpacity style={styles.btnOutline} onPress={handleCancel} disabled={loading}>
+                            <Text style={styles.btnOutlineText}>Annuler</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.btnSolid, { backgroundColor: '#ff9500' }]} onPress={handleConfirm} disabled={loading}>
+                            {loading
+                                ? <ActivityIndicator size="small" color="#fff" />
+                                : <><Ionicons name="ban" size={16} color="#fff" /><Text style={styles.btnSolidText}>Suspendre</Text></>
+                            }
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </View>
+        </Modal>
+    );
+}
+
+function ActiveModal({ visible, userName, loading, onCancel, onConfirm }) {
+    const [reason, setReason] = useState('');
+    const [error, setError]   = useState('');
+
+    const handleCancelActive = () => { setReason(''); setError(''); onCancel(); };
+
+    return (
+        <Modal visible={visible} animationType="slide" transparent>
+            <View style={styles.overlayBottom}>
+                <View style={styles.sheetBox}>
+                    <LinearGradient colors={['#ff9500', '#ff6b00']} style={styles.sheetHeader}>
+                        <View style={styles.sheetHeaderLeft}>
+                            <View style={styles.sheetIconWrap}>
+                                <Ionicons name="ban" size={22} color="#fff" />
+                            </View>
+                            <View>
+                                <Text style={styles.sheetTitle}>Activer le compte</Text>
+                                <Text style={styles.sheetSubtitle}>{userName}</Text>
+                            </View>
+                        </View>
+                        <TouchableOpacity style={styles.sheetCloseBtn} onPress={handleCancelActive}>
+                            <Ionicons name="close" size={20} color="rgba(255,255,255,0.8)" />
+                        </TouchableOpacity>
+                    </LinearGradient>
+                    <View style={styles.sheetFooter}>
+                        <TouchableOpacity style={styles.btnOutline} onPress={handleCancelActive} disabled={loading}>
+                            <Text style={styles.btnOutlineText}>Annuler</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.btnSolid, { backgroundColor: '#ff9500' }]} onPress={onConfirm}  disabled={loading}>
+                            {loading
+                                ? <ActivityIndicator size="small" color="#fff" />
+                                : <><Ionicons name="ban" size={16} color="#fff" /><Text style={styles.btnSolidText}>Activer</Text></>
+                            }
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </View>
+        </Modal>
+    );
+}
+
+
+
+// ============================================
+// MODAL — UPDATE ROLE
+// ============================================
+function UpdateRoleModal({ visible, userName, currentRole, loading, onCancel, onConfirm }) {
+    const [selectedRole, setSelectedRole] = useState(currentRole);
+    useEffect(() => { setSelectedRole(currentRole); }, [currentRole]);
+
+    const roleConfig = {
+        user:      { label: 'Utilisateur',    icon: 'person',  color: '#34c759', desc: 'Accès standard, consultation uniquement' },
+        pharmacie: { label: 'Pharmacien',     icon: 'medkit',  color: '#ff9500', desc: 'Gestion d\'une pharmacie' },
+        admin:     { label: 'Administrateur', icon: 'shield',  color: '#007aff', desc: 'Accès admin complet, gestion des utilisateurs' },
+    };
+
+    return (
+        <Modal visible={visible} animationType="slide" transparent>
+            <View style={styles.overlayBottom}>
+                <View style={styles.sheetBox}>
+                    <LinearGradient colors={['#007aff', '#0056cc']} style={styles.sheetHeader}>
+                        <View style={styles.sheetHeaderLeft}>
+                            <View style={styles.sheetIconWrap}>
+                                <Ionicons name="swap-horizontal" size={22} color="#fff" />
+                            </View>
+                            <View>
+                                <Text style={styles.sheetTitle}>Modifier le rôle</Text>
+                                <Text style={styles.sheetSubtitle}>{userName}</Text>
+                            </View>
+                        </View>
+                        <TouchableOpacity style={styles.sheetCloseBtn} onPress={onCancel}>
+                            <Ionicons name="close" size={20} color="rgba(255,255,255,0.8)" />
+                        </TouchableOpacity>
+                    </LinearGradient>
+                    <View style={styles.sheetBody}>
+                        <Text style={styles.formLabel}>Sélectionner un rôle</Text>
+                        <View style={styles.roleList}>
+                            {ROLES.map(role => {
+                                const cfg        = roleConfig[role];
+                                const isSelected = selectedRole === role;
+                                const isCurrent  = currentRole  === role;
+                                return (
+                                    <TouchableOpacity
+                                        key={role}
+                                        style={[styles.roleOption, isSelected && { borderColor: cfg.color, backgroundColor: cfg.color + '10' }]}
+                                        onPress={() => setSelectedRole(role)}
+                                    >
+                                        <View style={[styles.roleOptionIcon, { backgroundColor: cfg.color + '20' }]}>
+                                            <Ionicons name={cfg.icon} size={20} color={cfg.color} />
+                                        </View>
+                                        <View style={{ flex: 1 }}>
+                                            <View style={styles.roleOptionHeader}>
+                                                <Text style={[styles.roleOptionLabel, isSelected && { color: cfg.color }]}>{cfg.label}</Text>
+                                                {isCurrent && (
+                                                    <View style={styles.currentBadge}>
+                                                        <Text style={styles.currentBadgeText}>Actuel</Text>
+                                                    </View>
+                                                )}
+                                            </View>
+                                            <Text style={styles.roleOptionDesc}>{cfg.desc}</Text>
+                                        </View>
+                                        <View style={[styles.radioOuter, isSelected && { borderColor: cfg.color }]}>
+                                            {isSelected && <View style={[styles.radioInner, { backgroundColor: cfg.color }]} />}
+                                        </View>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </View>
+                    </View>
+                    <View style={styles.sheetFooter}>
+                        <TouchableOpacity style={styles.btnOutline} onPress={onCancel} disabled={loading}>
+                            <Text style={styles.btnOutlineText}>Annuler</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.btnSolid, { backgroundColor: '#007aff', opacity: selectedRole === currentRole ? 0.4 : 1 }]}
+                            onPress={() => onConfirm(selectedRole)}
+                            disabled={loading || selectedRole === currentRole}
+                        >
+                            {loading
+                                ? <ActivityIndicator size="small" color="#fff" />
+                                : <><Ionicons name="checkmark" size={16} color="#fff" /><Text style={styles.btnSolidText}>Confirmer</Text></>
+                            }
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </View>
+        </Modal>
+    );
+}
+
+// ============================================
+// MODAL — CREATE ADMIN
+// ============================================
+function CreateAdminModal({ visible, onClose, onSuccess }) {
+    const [form, setForm]         = useState({ firstName: '', lastName: '', email: '', phone: '', password: '' });
+    const [loading, setLoading]   = useState(false);
+    const [errors, setErrors]     = useState({});
+    const [showPassword, setShowPassword] = useState(false);
+
+    const validate = () => {
+        const e = {};
+        if (!form.firstName.trim()) e.firstName = 'Prénom requis';
+        if (!form.lastName.trim())  e.lastName  = 'Nom requis';
+        if (!form.email.trim())     e.email     = 'Email requis';
+        else if (!/\S+@\S+\.\S+/.test(form.email)) e.email = 'Email invalide';
+        if (!form.phone.trim())     e.phone     = 'Téléphone requis';
+        if (!form.password.trim())  e.password  = 'Mot de passe requis';
+        else if (form.password.length < 8) e.password = 'Min. 8 caractères';
+        setErrors(e);
+        return Object.keys(e).length === 0;
+    };
+
+    const handleSubmit = async () => {
+        if (!validate()) return;
+        try {
+            setLoading(true);
+            const res = await authService.createAdmin(form);
+            if (res.success) {
+                setForm({ firstName: '', lastName: '', email: '', phone: '', password: '' });
+                setErrors({});
+                onSuccess(res.data.admin);
+            }
+        } catch (error) {
+            Alert.alert('Erreur', error.message || 'Impossible de créer l\'admin');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleClose = () => {
+        setForm({ firstName: '', lastName: '', email: '', phone: '', password: '' });
+        setErrors({});
+        onClose();
+    };
+
+    return (
+        <Modal visible={visible} animationType="slide" transparent>
+            <View style={styles.overlayBottom}>
+                <View style={styles.sheetBox}>
+                    <LinearGradient colors={['#6c2bd9', '#9c27b0']} style={styles.sheetHeader}>
+                        <View style={styles.sheetHeaderLeft}>
+                            <View style={styles.sheetIconWrap}>
+                                <Ionicons name="shield-checkmark" size={22} color="#fff" />
+                            </View>
+                            <View>
+                                <Text style={styles.sheetTitle}>Créer un Admin</Text>
+                                <Text style={styles.sheetSubtitle}>Accès administrateur complet</Text>
+                            </View>
+                        </View>
+                        <TouchableOpacity style={styles.sheetCloseBtn} onPress={handleClose}>
+                            <Ionicons name="close" size={20} color="rgba(255,255,255,0.8)" />
+                        </TouchableOpacity>
+                    </LinearGradient>
+                    <ScrollView style={styles.sheetBody} showsVerticalScrollIndicator={false}>
+                        <View style={styles.infoBanner}>
+                            <Ionicons name="information-circle" size={16} color="#6c2bd9" />
+                            <Text style={styles.infoBannerText}>Auto-vérifié · 30 jours d'essai gratuit</Text>
+                        </View>
+                        <View style={styles.formRow}>
+                            <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
+                                <Text style={styles.formLabel}>Prénom *</Text>
+                                <View style={[styles.inputWrap, errors.firstName && styles.inputError]}>
+                                    <Ionicons name="person-outline" size={16} color="#999" style={styles.inputIcon} />
+                                    <TextInput style={styles.input} placeholder="Jean" placeholderTextColor="#bbb" value={form.firstName} onChangeText={v => setForm(p => ({ ...p, firstName: v }))} />
+                                </View>
+                                {errors.firstName && <Text style={styles.errorText}>{errors.firstName}</Text>}
+                            </View>
+                            <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
+                                <Text style={styles.formLabel}>Nom *</Text>
+                                <View style={[styles.inputWrap, errors.lastName && styles.inputError]}>
+                                    <Ionicons name="person-outline" size={16} color="#999" style={styles.inputIcon} />
+                                    <TextInput style={styles.input} placeholder="Dupont" placeholderTextColor="#bbb" value={form.lastName} onChangeText={v => setForm(p => ({ ...p, lastName: v }))} />
+                                </View>
+                                {errors.lastName && <Text style={styles.errorText}>{errors.lastName}</Text>}
+                            </View>
+                        </View>
+                        <View style={styles.formGroup}>
+                            <Text style={styles.formLabel}>Email *</Text>
+                            <View style={[styles.inputWrap, errors.email && styles.inputError]}>
+                                <Ionicons name="mail-outline" size={16} color="#999" style={styles.inputIcon} />
+                                <TextInput style={styles.input} placeholder="admin@example.com" placeholderTextColor="#bbb" keyboardType="email-address" autoCapitalize="none" value={form.email} onChangeText={v => setForm(p => ({ ...p, email: v }))} />
+                            </View>
+                            {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
+                        </View>
+                        <View style={styles.formGroup}>
+                            <Text style={styles.formLabel}>Téléphone *</Text>
+                            <View style={[styles.inputWrap, errors.phone && styles.inputError]}>
+                                <Ionicons name="call-outline" size={16} color="#999" style={styles.inputIcon} />
+                                <TextInput style={styles.input} placeholder="+33 6 12 34 56 78" placeholderTextColor="#bbb" keyboardType="phone-pad" value={form.phone} onChangeText={v => setForm(p => ({ ...p, phone: v }))} />
+                            </View>
+                            {errors.phone && <Text style={styles.errorText}>{errors.phone}</Text>}
+                        </View>
+                        <View style={styles.formGroup}>
+                            <Text style={styles.formLabel}>Mot de passe *</Text>
+                            <View style={[styles.inputWrap, errors.password && styles.inputError]}>
+                                <Ionicons name="lock-closed-outline" size={16} color="#999" style={styles.inputIcon} />
+                                <TextInput style={[styles.input, { flex: 1 }]} placeholder="Min. 8 caractères" placeholderTextColor="#bbb" secureTextEntry={!showPassword} value={form.password} onChangeText={v => setForm(p => ({ ...p, password: v }))} />
+                                <TouchableOpacity onPress={() => setShowPassword(p => !p)} style={styles.eyeBtn}>
+                                    <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={18} color="#999" />
+                                </TouchableOpacity>
+                            </View>
+                            {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
+                        </View>
+                    </ScrollView>
+                    <View style={styles.sheetFooter}>
+                        <TouchableOpacity style={styles.btnOutline} onPress={handleClose} disabled={loading}>
+                            <Text style={styles.btnOutlineText}>Annuler</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.btnSolid, { backgroundColor: '#6c2bd9' }]} onPress={handleSubmit} disabled={loading}>
+                            {loading
+                                ? <ActivityIndicator size="small" color="#fff" />
+                                : <><Ionicons name="shield-checkmark" size={16} color="#fff" /><Text style={styles.btnSolidText}>Créer l'Admin</Text></>
+                            }
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </View>
+        </Modal>
+    );
+}
+
+function RejectRequestModal({ visible, userName, loading, onCancel, onConfirm }) {
+    const [reason, setReason] = useState('');
+    const [error, setError]   = useState('');
+
+    const handleConfirm = () => {
+        if (!reason.trim()) { setError('Veuillez indiquer une raison'); return; }
+        setError('');
+        onConfirm(reason.trim());
+    };
+
+    const handleCancel = () => { setReason(''); setError(''); onCancel(); };
+
+    return (
+        <Modal visible={visible} animationType="slide" transparent>
+            <View style={styles.overlayBottom}>
+                <View style={styles.sheetBox}>
+                    <LinearGradient colors={['#ff3b30', '#cc2200']} style={styles.sheetHeader}>
+                        <View style={styles.sheetHeaderLeft}>
+                            <View style={styles.sheetIconWrap}>
+                                <Ionicons name="close-circle" size={22} color="#fff" />
+                            </View>
+                            <View>
+                                <Text style={styles.sheetTitle}>Rejeter la demande</Text>
+                                <Text style={styles.sheetSubtitle}>{userName}</Text>
+                            </View>
+                        </View>
+                        <TouchableOpacity style={styles.sheetCloseBtn} onPress={handleCancel}>
+                            <Ionicons name="close" size={20} color="rgba(255,255,255,0.8)" />
+                        </TouchableOpacity>
+                    </LinearGradient>
+                    <View style={styles.sheetBody}>
+                        <Text style={styles.formLabel}>Raison du rejet *</Text>
+                        <View style={[styles.textAreaWrap, error ? styles.inputError : null]}>
+                            <TextInput
+                                style={styles.textArea}
+                                placeholder="Ex: Paiement non reçu, informations incomplètes..."
+                                placeholderTextColor="#bbb"
+                                multiline
+                                numberOfLines={4}
+                                value={reason}
+                                onChangeText={v => { setReason(v); setError(''); }}
+                            />
+                        </View>
+                        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+                    </View>
+                    <View style={styles.sheetFooter}>
+                        <TouchableOpacity style={styles.btnOutline} onPress={handleCancel} disabled={loading}>
+                            <Text style={styles.btnOutlineText}>Annuler</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.btnSolid, { backgroundColor: '#ff3b30' }]}
+                            onPress={handleConfirm}
+                            disabled={loading}
+                        >
+                            {loading
+                                ? <ActivityIndicator size="small" color="#fff" />
+                                : <><Ionicons name="close-circle" size={16} color="#fff" />
+                                   <Text style={styles.btnSolidText}>Rejeter</Text></>
+                            }
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </View>
+        </Modal>
+    );
+}
+
+function SubscriptionsTab({ requests, loading, processingId, onApprove, onReject, onRefresh }) {
+    const [filter, setFilter] = useState('pending');
+    
+    const filtered = requests.filter(r => 
+        filter === 'all' ? true : r.status === filter
+    );
+
+    const planColors = {
+        free:       '#999',
+        basic:      '#007aff',
+        premium:    '#ff9500',
+        enterprise: '#6c2bd9'
+    };
+
+    if (loading) return (
+        <View style={{ padding: 40, alignItems: 'center' }}>
+            <ActivityIndicator size="large" color="#6c2bd9" />
+            <Text style={{ marginTop: 12, color: '#999' }}>Chargement...</Text>
+        </View>
+    );
+
+    return (
+        <View style={styles.tabContent}>
+            <View style={styles.tabHeader}>
+                <Text style={styles.sectionTitle}>
+                    💳 Demandes ({requests.filter(r => r.status === 'pending').length} en attente)
+                </Text>
+                <TouchableOpacity onPress={onRefresh} style={styles.refreshBtn}>
+                    <Ionicons name="refresh" size={18} color="#6c2bd9" />
+                </TouchableOpacity>
+            </View>
+
+            {/* Filtre */}
+            <View style={subStyles.filterRow}>
+                {['pending', 'approved', 'rejected', 'all'].map(f => (
+                    <TouchableOpacity
+                        key={f}
+                        style={[subStyles.filterBtn, filter === f && subStyles.filterBtnActive]}
+                        onPress={() => setFilter(f)}
+                    >
+                        <Text style={[subStyles.filterBtnText, filter === f && subStyles.filterBtnTextActive]}>
+                            {f === 'pending' ? '⏳ Attente' :
+                             f === 'approved' ? '✅ Approuvé' :
+                             f === 'rejected' ? '❌ Rejeté' : '📋 Tous'}
+                        </Text>
+                    </TouchableOpacity>
+                ))}
+            </View>
+
+            {filtered.length === 0 ? (
+                <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+                    <Text style={{ fontSize: 40, marginBottom: 12 }}>📭</Text>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#333' }}>
+                        Aucune demande
+                    </Text>
+                    <Text style={{ color: '#999', marginTop: 4 }}>
+                        {filter === 'pending' ? 'Aucune demande en attente' : `Aucune demande "${filter}"`}
+                    </Text>
+                </View>
+            ) : (
+                filtered.map(req => {
+                    const isPending   = req.status === 'pending';
+                    const isProcessing = processingId === req.id;
+                    const fromColor   = planColors[req.currentPlan]   || '#999';
+                    const toColor     = planColors[req.requestedPlan] || '#999';
+
+                    return (
+                        <View key={req.id} style={[
+                            subStyles.requestCard,
+                            req.status === 'approved' && subStyles.requestCardApproved,
+                            req.status === 'rejected' && subStyles.requestCardRejected,
+                        ]}>
+                            {/* Header */}
+                            <View style={subStyles.requestHeader}>
+                                <View style={subStyles.requestAvatar}>
+                                    <Text style={subStyles.requestAvatarText}>
+                                        {req.user?.firstName?.[0]}{req.user?.lastName?.[0]}
+                                    </Text>
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={subStyles.requestName}>
+                                        {req.user?.firstName} {req.user?.lastName}
+                                    </Text>
+                                    <Text style={subStyles.requestEmail}>{req.user?.email}</Text>
+                                </View>
+                                {/* Badge status */}
+                                <View style={[
+                                    subStyles.statusPill,
+                                    req.status === 'pending'  && { backgroundColor: '#fff3cd' },
+                                    req.status === 'approved' && { backgroundColor: '#d4edda' },
+                                    req.status === 'rejected' && { backgroundColor: '#f8d7da' },
+                                ]}>
+                                    <Text style={[
+                                        subStyles.statusPillText,
+                                        req.status === 'pending'  && { color: '#856404' },
+                                        req.status === 'approved' && { color: '#155724' },
+                                        req.status === 'rejected' && { color: '#721c24' },
+                                    ]}>
+                                        {req.status === 'pending'  ? '⏳ En attente' :
+                                         req.status === 'approved' ? '✅ Approuvé'   :
+                                         '❌ Rejeté'}
+                                    </Text>
+                                </View>
+                            </View>
+
+                            {/* Plan upgrade arrow */}
+                            <View style={subStyles.planRow}>
+                                <View style={[subStyles.planPill, { backgroundColor: fromColor + '20', borderColor: fromColor }]}>
+                                    <Text style={[subStyles.planPillText, { color: fromColor }]}>
+                                        {req.currentPlan?.toUpperCase()}
+                                    </Text>
+                                </View>
+                                <Ionicons name="arrow-forward" size={18} color="#999" />
+                                <View style={[subStyles.planPill, { backgroundColor: toColor + '20', borderColor: toColor }]}>
+                                    <Text style={[subStyles.planPillText, { color: toColor }]}>
+                                        {req.requestedPlan?.toUpperCase()}
+                                    </Text>
+                                </View>
+                                <Text style={subStyles.durationText}>
+                                    · {req.durationMonths} mois
+                                </Text>
+                            </View>
+
+                            {/* Date */}
+                            <Text style={subStyles.requestDate}>
+                                📅 {new Date(req.createdAt).toLocaleDateString('fr-FR', {
+                                    day: '2-digit', month: 'long', year: 'numeric'
+                                })}
+                            </Text>
+
+                            {/* Raison rejet */}
+                            {req.status === 'rejected' && req.rejectReason && (
+                                <View style={subStyles.rejectReasonBox}>
+                                    <Text style={subStyles.rejectReasonText}>
+                                        💬 {req.rejectReason}
+                                    </Text>
+                                </View>
+                            )}
+
+                            {/* Actions — uniquement si pending */}
+                            {isPending && (
+                                <View style={subStyles.requestActions}>
+                                    <TouchableOpacity
+                                        style={[subStyles.rejectBtn, isProcessing && { opacity: 0.5 }]}
+                                        onPress={() => onReject(req.id, `${req.user?.firstName} ${req.user?.lastName}`)}
+                                        disabled={isProcessing}
+                                    >
+                                        <Ionicons name="close" size={16} color="#ff3b30" />
+                                        <Text style={subStyles.rejectBtnText}>Rejeter</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={[subStyles.approveBtn, isProcessing && { opacity: 0.5 }]}
+                                        onPress={() => onApprove(req.id)}
+                                        disabled={isProcessing}
+                                    >
+                                        {isProcessing
+                                            ? <ActivityIndicator size="small" color="#fff" />
+                                            : <>
+                                                <Ionicons name="checkmark" size={16} color="#fff" />
+                                                <Text style={subStyles.approveBtnText}>Approuver</Text>
+                                              </>
+                                        }
+                                    </TouchableOpacity>
+                                </View>
+                            )}
+                        </View>
+                    );
+                })
+            )}
+        </View>
+    );
+}
+// ============================================
+// ONGLETS
+// ============================================
+function StatsTab({ stats }) {
+    if (!stats) return <View style={styles.tabContent}><Text style={styles.emptyText}>Pas de stats disponibles</Text></View>;
+    return (
+        <View style={styles.tabContent}>
+            <Text style={styles.sectionTitle}>📊 Vue d'ensemble</Text>
+            <View style={styles.statsGrid}>
+                <StatCard icon="people"       label="Utilisateurs" value={stats.users?.total        || 0} color="#007aff" />
+                <StatCard icon="medkit"       label="Pharmacies"   value={stats.pharmacies?.total   || 0} color="#ff9500" />
+                <StatCard icon="alert-circle" label="En attente"   value={stats.pharmacies?.pending || 0} color="#ff3b30" />
+                <StatCard icon="person-add"   label="Nouveaux"     value={stats.users?.recent       || 0} color="#00b368" />
+            </View>
+        </View>
+    );
+}
+
+function UsersTab({ users, onDeleteUser, onActiveUser, onSuspendUser, onUpdateRole, onCreateAdmin }) {
+    return (
+        <View style={styles.tabContent}>
+            <View style={styles.tabHeader}>
+                <Text style={styles.sectionTitle}>👤 Utilisateurs ({users.length})</Text>
+                <TouchableOpacity style={styles.addBtn} onPress={onCreateAdmin}>
+                    <Ionicons name="add" size={18} color="#fff" />
+                    <Text style={styles.addBtnText}>Admin</Text>
+                </TouchableOpacity>
+            </View>
+            {users.length === 0 ? (
+                <Text style={styles.emptyText}>Aucun utilisateur</Text>
+            ) : (
+                users.map(u => (
+                    <View key={u.id} style={[styles.card, u.isSuspended && styles.cardSuspended]}>
+                        <View style={styles.cardHeader}>
+                            <View style={[styles.cardAvatar, { backgroundColor: getRoleColor(u.role) + '20' }]}>
+                                <Text style={[styles.cardAvatarText, { color: getRoleColor(u.role) }]}>
+                                    {u.firstName?.[0]}{u.lastName?.[0]}
+                                </Text>
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={styles.cardTitle}>{u.firstName} {u.lastName}</Text>
+                                <Text style={styles.cardMeta}>{u.email}</Text>
+                            </View>
+                        </View>
+                        <View style={styles.cardFooter}>
+                            <View style={[styles.roleBadge, { backgroundColor: getRoleColor(u.role) }]}>
+                                <Text style={styles.roleBadgeText}>{u.role}</Text>
+                            </View>
+                            {(u.isSuspended || u.status === 'suspended') && (
+                                <View style={styles.suspendedBadge}>
+                                    <Ionicons name="ban" size={11} color="#ff9500" />
+                                    <Text style={styles.suspendedBadgeText}>Suspendu</Text>
+                                </View>
+                            )}
+                            {u.role === 'superadmin' && (
+                                <View style={styles.protectedBadge}>
+                                    <Ionicons name="shield" size={11} color="#6c2bd9" />
+                                    <Text style={styles.protectedText}>Protégé</Text>
+                                </View>
+                            )}
+                            {u.role !== 'superadmin' && (
+                                <View style={styles.cardActions}>
+                                    <TouchableOpacity
+                                        style={styles.actionBtn}
+                                        onPress={() => onUpdateRole(u.id, `${u.firstName} ${u.lastName}`, u.role)}
+                                    >
+                                        <Ionicons name="swap-horizontal" size={16} color="#007aff" />
+                                    </TouchableOpacity>
+
+                                    {/* Bouton Suspend / Active */}
+                                    {u.isSuspended || u.status === 'suspended' ? (
+                                            <TouchableOpacity
+                                                style={[styles.actionBtn, { backgroundColor: '#e8f5e9', borderColor: '#c8e6c9' }]}
+                                                onPress={() => onActiveUser(u.id, `${u.firstName} ${u.lastName}`)}  // ✅ onActiveUser
+                                            >
+                                                <Ionicons name="checkmark-circle-outline" size={16} color="#34c759" />
+                                            </TouchableOpacity>
+                                        ) : (
+                                            <TouchableOpacity
+                                                style={[styles.actionBtn, { backgroundColor: '#fff8f0', borderColor: '#ffe4cc' }]}
+                                                onPress={() => onSuspendUser(u.id, `${u.firstName} ${u.lastName}`)}
+                                            >
+                                                <Ionicons name="ban" size={16} color="#ff9500" />
+                                            </TouchableOpacity>
+                                        )}
+                                    
+                                    <TouchableOpacity
+                                        style={[styles.actionBtn, { backgroundColor: '#fff1f0', borderColor: '#ffd6d6' }]}
+                                        onPress={() => onDeleteUser(u.id, `${u.firstName} ${u.lastName}`)}
+                                    >
+                                        <Ionicons name="trash-outline" size={16} color="#ff3b30" />
+                                    </TouchableOpacity>
+                                </View>
+                            )}
+                        </View>
+                    </View>
+                ))
+            )}
+        </View>
+    );
+}
+
+function PharmaciesTab({ pharmacies, onValidate, onSuspend, selectedPharmacy, setSelectedPharmacy, subscriptionHistory, historyLoading, loadHistory }) {
+    return (
+        <View style={styles.tabContent}>
+            <Text style={styles.sectionTitle}>🏥 Pharmacies ({pharmacies.length})</Text>
+            {pharmacies.length === 0 ? (
+                <Text style={styles.emptyText}>Aucune pharmacie enregistrée</Text>
+            ) : (
+                pharmacies.map((ph) => {
+                    const isSelected   = selectedPharmacy?.id === ph.id;
+                    const statusColor  = getStatusColor(ph.status);
+                    return (
+                        <TouchableOpacity
+                            key={ph.id}
+                            activeOpacity={0.85}
+                            style={[
+                                styles.card,
+                                isSelected && styles.cardSelected,
+                                ph.status === 'suspended' && styles.cardSuspended,
+                            ]}
+                            onPress={() => {
+                                if (isSelected) {
+                                    // ✅ Désélectionner si on re-clique
+                                    setSelectedPharmacy(null);
+                                } else {
+                                    setSelectedPharmacy(ph);
+                                    loadHistory(ph.id);
+                                }
+                            }}
+                        >
+                            <View style={styles.cardHeader}>
+                                <View style={[styles.cardAvatar, { backgroundColor: '#ff950020' }]}>
+                                    <Text style={[styles.cardAvatarText, { color: '#ff9500' }]}>
+                                        {ph.name?.[0] || 'P'}
+                                    </Text>
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.cardTitle}>{ph.name}</Text>
+                                    <Text style={styles.cardMeta}>📍 {ph.city || ph.address?.city || '—'}</Text>
+                                </View>
+                                {/* Chevron pour indiquer que la carte est cliquable */}
+                                <Ionicons
+                                    name={isSelected ? 'chevron-up' : 'chevron-down'}
+                                    size={18}
+                                    color="#999"
+                                />
+                            </View>
+
+                            <View style={styles.cardFooter}>
+                                <View style={[styles.statusBadge, { backgroundColor: statusColor.bg }]}>
+                                    <Text style={[styles.statusBadgeText, { color: statusColor.text }]}>
+                                        {ph.status === 'pending' ? 'En attente' : ph.status === 'active' ? 'Active' : 'Suspendue'}
+                                    </Text>
+                                </View>
+                                <View style={styles.cardActions}>
+                                    {ph.status === 'pending' && (
+                                        <TouchableOpacity
+                                            style={styles.actionBtnSuccess}
+                                            onPress={(e) => { e.stopPropagation?.(); onValidate(ph); }}
+                                        >
+                                            <Ionicons name="checkmark-circle-outline" size={20} color="#2e7d32" />
+                                        </TouchableOpacity>
+                                    )}
+                                    {ph.status !== 'suspended' && (
+                                        <TouchableOpacity
+                                            style={styles.actionBtnWarning}
+                                            onPress={(e) => { e.stopPropagation?.(); onSuspend(ph); }}
+                                        >
+                                            <Ionicons name="ban" size={18} color="#ff9500" />
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+                            </View>
+
+                            {/* ✅ Section historique — visible uniquement si sélectionnée */}
+                            {isSelected && (
+                                <View style={styles.historySection}>
+                                    <Text style={styles.historyTitle}>📋 Historique abonnements</Text>
+                                    {historyLoading ? (
+                                        <ActivityIndicator size="small" color="#6c2bd9" style={{ marginVertical: 12 }} />
+                                    ) : subscriptionHistory.length === 0 ? (
+                                        <Text style={styles.emptyHistory}>Aucun abonnement enregistré</Text>
+                                    ) : (
+                                        subscriptionHistory.map((sub, i) => (
+                                            <View key={sub.id || i} style={styles.subscriptionItem}>
+                                                <View style={styles.subLine}>
+                                                    <Text style={styles.subPlan}>{sub.plan || sub.type || '—'}</Text>
+                                                    <Text style={[styles.subStatus, { color: sub.status === 'active' ? '#2e7d32' : '#d32f2f' }]}>
+                                                        {sub.status}
+                                                    </Text>
+                                                </View>
+                                                <Text style={styles.subDates}>
+                                                    {sub.startDate ? new Date(sub.startDate).toLocaleDateString('fr-FR') : '—'}
+                                                    {' → '}
+                                                    {sub.endDate ? new Date(sub.endDate).toLocaleDateString('fr-FR') : 'en cours'}
+                                                </Text>
+                                                {sub.amount && (
+                                                    <Text style={styles.subPrice}>{sub.amount} €</Text>
+                                                )}
+                                            </View>
+                                        ))
+                                    )}
+                                </View>
+                            )}
+                        </TouchableOpacity>
+                    );
+                })
+            )}
+        </View>
+    );
+}
+
+function StatCard({ icon, label, value, color }) {
+    return (
+        <View style={[styles.statCard, { borderLeftColor: color }]}>
+            <Ionicons name={icon} size={24} color={color} />
+            <Text style={styles.statValue}>{value}</Text>
+            <Text style={styles.statLabel}>{label}</Text>
+        </View>
+    );
+}
+
+function getStatusColor(status) {
+    if (status === 'pending')   return { bg: '#fff3cd', text: '#856404' };
+    if (status === 'active')    return { bg: '#d4edda', text: '#155724' };
+    if (status === 'suspended') return { bg: '#f8d7da', text: '#721c24' };
+    return { bg: '#e2e3e5', text: '#495057' };
+}
+
+const getRoleColor = (role) => ({
+    superadmin: '#6c2bd9', admin: '#007aff', pharmacist: '#ff9500', user: '#34c759'
+}[role] || '#999');
+
+// ============================================
+// STYLES
+// ============================================
+const styles = StyleSheet.create({
+    container:          { flex: 1, backgroundColor: '#f5f5f5' },
+    loadingContainer:   { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' },
+    loadingText:        { marginTop: 16, fontSize: 16, color: '#666' },
+    header:             { paddingTop: 50, paddingBottom: 20, paddingHorizontal: 20 },
+    headerTop:          { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+    headerTitle:        { fontSize: 28, fontWeight: '800', color: '#fff' },
+    headerSubtitle:     { fontSize: 14, color: 'rgba(255,255,255,0.8)' },
+    headerActions:      { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    createAdminBtn:     { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#fff', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7 },
+    createAdminBtnText: { fontSize: 13, fontWeight: '700', color: '#6c2bd9' },
+    logoutBtn:          { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+    userInfo:           { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
+    avatar:             { width: 50, height: 50, borderRadius: 25, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+    avatarText:         { fontSize: 18, fontWeight: '800', color: '#fff' },
+    userName:           { fontSize: 16, fontWeight: '700', color: '#fff' },
+    userEmail:          { fontSize: 14, color: 'rgba(255,255,255,0.8)' },
+    tabs:               { flexDirection: 'row', gap: 8 },
+    tab:                { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 10, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.1)' },
+    tabActive:          { backgroundColor: 'rgba(255,255,255,0.25)' },
+    tabText:            { fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.6)' },
+    tabTextActive:      { color: '#fff' },
+    content:            { flex: 1 },
+    tabContent:         { padding: 20 },
+    tabHeader:          { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+    sectionTitle:       { fontSize: 20, fontWeight: '800', color: '#333', marginBottom: 12 },
+    addBtn:             { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#6c2bd9', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },
+    addBtnText:         { fontSize: 13, fontWeight: '700', color: '#fff' },
+    emptyText:          { fontSize: 14, color: '#999', textAlign: 'center', marginTop: 20 },
+    statsGrid:          { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+    statCard:           { width: '48%', backgroundColor: '#fff', borderRadius: 12, padding: 16, borderLeftWidth: 4 },
+    statValue:          { fontSize: 28, fontWeight: '800', color: '#333', marginTop: 8 },
+    statLabel:          { fontSize: 13, color: '#666', marginTop: 4 },
+    card:               { backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 12 },
+    cardSuspended:      { opacity: 0.7, borderWidth: 1.5, borderColor: '#ffe4cc' },
+    cardSelected:       { borderWidth: 2, borderColor: '#6c2bd9', backgroundColor: '#faf8ff' },
+    cardHeader:         { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    cardAvatar:         { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
+    cardAvatarText:     { fontSize: 14, fontWeight: '800' },
+    cardTitle:          { fontSize: 16, fontWeight: '700', color: '#333', marginBottom: 2 },
+    cardMeta:           { fontSize: 13, color: '#666' },
+    cardFooter:         { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+    cardActions:        { flexDirection: 'row', gap: 6, marginLeft: 'auto' },
+    actionBtn:          { width: 34, height: 34, borderRadius: 17, backgroundColor: '#f0f4ff', borderWidth: 1, borderColor: '#dce8ff', alignItems: 'center', justifyContent: 'center' },
+    actionBtnSuccess:   { width: 38, height: 38, borderRadius: 19, backgroundColor: '#e8f5e9', borderWidth: 1, borderColor: '#c8e6c9', alignItems: 'center', justifyContent: 'center' },
+    actionBtnWarning:   { width: 38, height: 38, borderRadius: 19, backgroundColor: '#fff8f0', borderWidth: 1, borderColor: '#ffe4cc', alignItems: 'center', justifyContent: 'center' },
+    roleBadge:          { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+    roleBadgeText:      { fontSize: 12, fontWeight: '700', color: '#fff' },
+    suspendedBadge:     { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#fff8f0', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+    suspendedBadgeText: { fontSize: 11, fontWeight: '600', color: '#ff9500' },
+    protectedBadge:     { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#f0e8ff', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+    protectedText:      { fontSize: 11, fontWeight: '600', color: '#6c2bd9' },
+    statusBadge:        { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+    statusBadgeText:    { fontSize: 12, fontWeight: '700' },
+
+    // Historique abonnements
+    historySection:     { marginTop: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#eee' },
+    historyTitle:       { fontSize: 14, fontWeight: '700', color: '#333', marginBottom: 10 },
+    subscriptionItem:   { backgroundColor: '#f8f8f8', borderRadius: 8, padding: 10, marginBottom: 8 },
+    subLine:            { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+    subPlan:            { fontWeight: '700', color: '#333', fontSize: 14 },
+    subStatus:          { fontSize: 13, fontWeight: '600' },
+    subDates:           { color: '#666', fontSize: 12 },
+    subPrice:           { color: '#6c2bd9', fontWeight: '700', marginTop: 4, fontSize: 13 },
+    emptyHistory:       { color: '#999', fontStyle: 'italic', textAlign: 'center', paddingVertical: 16 },
+
+    // Overlay
+    overlay:            { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+    overlayBottom:      { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+    confirmBox:         { backgroundColor: '#fff', borderRadius: 20, margin: 30, padding: 28, alignItems: 'center', width: '85%' },
+    confirmIconWrap:    { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+    confirmTitle:       { fontSize: 18, fontWeight: '800', color: '#333', marginBottom: 10 },
+    confirmMsg:         { fontSize: 14, color: '#666', textAlign: 'center', lineHeight: 22, marginBottom: 20 },
+    confirmBold:        { fontWeight: '800', color: '#333' },
+    confirmRow:         { flexDirection: 'row', gap: 12, width: '100%' },
+    sheetBox:           { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '90%' },
+    sheetHeader:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, borderTopLeftRadius: 24, borderTopRightRadius: 24 },
+    sheetHeaderLeft:    { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    sheetIconWrap:      { width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+    sheetTitle:         { fontSize: 17, fontWeight: '800', color: '#fff' },
+    sheetSubtitle:      { fontSize: 12, color: 'rgba(255,255,255,0.8)', marginTop: 2 },
+    sheetCloseBtn:      { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
+    sheetBody:          { padding: 20, maxHeight: 420 },
+    sheetFooter:        { flexDirection: 'row', gap: 12, padding: 20, borderTopWidth: 1, borderTopColor: '#f0f0f0' },
+    infoBanner:         { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#f0e8ff', borderRadius: 10, padding: 12, marginBottom: 20 },
+    infoBannerText:     { flex: 1, fontSize: 13, color: '#6c2bd9', fontWeight: '500' },
+    formRow:            { flexDirection: 'row' },
+    formGroup:          { marginBottom: 16 },
+    formLabel:          { fontSize: 13, fontWeight: '700', color: '#333', marginBottom: 8 },
+    inputWrap:          { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f7f7f7', borderRadius: 10, borderWidth: 1.5, borderColor: '#eee', paddingHorizontal: 12, height: 48 },
+    inputError:         { borderColor: '#ff3b30', backgroundColor: '#fff8f8' },
+    inputIcon:          { marginRight: 8 },
+    input:              { flex: 1, fontSize: 14, color: '#333' },
+    eyeBtn:             { padding: 4 },
+    textAreaWrap:       { backgroundColor: '#f7f7f7', borderRadius: 10, borderWidth: 1.5, borderColor: '#eee', padding: 12, minHeight: 90, width: '100%' },
+    textArea:           { fontSize: 14, color: '#333', textAlignVertical: 'top', minHeight: 70 },
+    errorText:          { fontSize: 12, color: '#ff3b30', marginTop: 4 },
+    roleList:           { gap: 10 },
+    roleOption:         { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 12, borderWidth: 2, borderColor: '#eee', backgroundColor: '#fff' },
+    roleOptionIcon:     { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+    roleOptionHeader:   { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 },
+    roleOptionLabel:    { fontSize: 15, fontWeight: '700', color: '#333' },
+    roleOptionDesc:     { fontSize: 12, color: '#999' },
+    currentBadge:       { backgroundColor: '#e8f5e9', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+    currentBadgeText:   { fontSize: 10, fontWeight: '700', color: '#2e7d32' },
+    radioOuter:         { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: '#ddd', alignItems: 'center', justifyContent: 'center' },
+    radioInner:         { width: 10, height: 10, borderRadius: 5 },
+    btnOutline:         { flex: 1, height: 50, borderRadius: 12, borderWidth: 1.5, borderColor: '#ddd', alignItems: 'center', justifyContent: 'center' },
+    btnOutlineText:     { fontSize: 15, fontWeight: '700', color: '#666' },
+    btnSolid:           { flex: 2, height: 50, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+    btnSolidText:       { fontSize: 15, fontWeight: '800', color: '#fff' },
+    // Ajouter dans styles.StyleSheet
+refreshBtn: { 
+    width: 36, height: 36, borderRadius: 18, 
+    backgroundColor: '#f0e8ff', alignItems: 'center', justifyContent: 'center' 
+},
+});
+// Nouveau StyleSheet séparé pour les subscriptions
+const subStyles = StyleSheet.create({
+    filterRow:           { flexDirection: 'row', gap: 6, marginBottom: 16, flexWrap: 'wrap' },
+    filterBtn:           { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20, backgroundColor: '#f0f0f0' },
+    filterBtnActive:     { backgroundColor: '#6c2bd9' },
+    filterBtnText:       { fontSize: 12, fontWeight: '600', color: '#666' },
+    filterBtnTextActive: { color: '#fff' },
+    requestCard:         { backgroundColor: '#fff', borderRadius: 14, padding: 16, marginBottom: 12, borderWidth: 1.5, borderColor: '#eee' },
+    requestCardApproved: { borderColor: '#c8e6c9', backgroundColor: '#f9fff9' },
+    requestCardRejected: { borderColor: '#ffd6d6', backgroundColor: '#fff9f9', opacity: 0.8 },
+    requestHeader:       { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+    requestAvatar:       { width: 40, height: 40, borderRadius: 20, backgroundColor: '#f0e8ff', alignItems: 'center', justifyContent: 'center' },
+    requestAvatarText:   { fontSize: 13, fontWeight: '800', color: '#6c2bd9' },
+    requestName:         { fontSize: 15, fontWeight: '700', color: '#333' },
+    requestEmail:        { fontSize: 12, color: '#999', marginTop: 1 },
+    statusPill:          { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20 },
+    statusPillText:      { fontSize: 11, fontWeight: '700' },
+    planRow:             { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+    planPill:            { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: 1.5 },
+    planPillText:        { fontSize: 12, fontWeight: '800' },
+    durationText:        { fontSize: 13, color: '#999', fontWeight: '600' },
+    requestDate:         { fontSize: 12, color: '#aaa', marginBottom: 8 },
+    rejectReasonBox:     { backgroundColor: '#fff1f0', borderRadius: 8, padding: 10, marginBottom: 8 },
+    rejectReasonText:    { fontSize: 13, color: '#cc0000', fontStyle: 'italic' },
+    requestActions:      { flexDirection: 'row', gap: 10, marginTop: 4 },
+    rejectBtn:           { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 10, borderWidth: 1.5, borderColor: '#ffd6d6', backgroundColor: '#fff1f0' },
+    rejectBtnText:       { fontSize: 14, fontWeight: '700', color: '#ff3b30' },
+    approveBtn:          { flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 10, backgroundColor: '#00b368' },
+    approveBtnText:      { fontSize: 14, fontWeight: '700', color: '#fff' },
+});

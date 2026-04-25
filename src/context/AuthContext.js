@@ -83,6 +83,16 @@ export const AuthProvider = ({ children }) => {
             throw error;
         }
     };
+    // password reset
+    const resetPassword = async (email, newPassword) =>{
+        try{
+            const response = await authService.resetPassword(email, newPassword);
+            return response;
+        }catch(error){
+            throw error;
+        }
+    }
+
 
     //Deconnexion
     const logout = async () => {
@@ -197,6 +207,7 @@ export const AuthProvider = ({ children }) => {
         isEmailVerified: user?.isEmailVerified || false,
         register,
         login,
+        resetPassword,
         logout,
         verifyEmail,
         refreshUser,
