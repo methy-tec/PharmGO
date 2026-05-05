@@ -1,8 +1,8 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAuth } from "../context/AuthContext";
-import { ActivityIndicator, View, Text, StyleSheet } from "react-native";
+import { ActivityIndicator, View, Text, StyleSheet, AppState } from "react-native";
 
 // Ecrans Auth
 import LoginScreen from "../screens/auth/LoginScreen";
@@ -112,7 +112,7 @@ export default function RootNavigator() {
     }
 
     return (
-        <NavigationContainer>
+         <NavigationContainer>
             {/* Si pas connecté OU user est null -> AuthNavigator */}
             {!isAuthenticated || !user ? (
                 <AuthNavigator />

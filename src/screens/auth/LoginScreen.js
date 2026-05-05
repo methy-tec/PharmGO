@@ -93,7 +93,7 @@ export default function LoginScreen({ navigation }) {
                 >
                     <Text style={styles.logo}>💊</Text>
                     <Text style={styles.appName}>PharmaGO</Text>
-                    <Text style={styles.version}>v1.0</Text>
+                    <Text style={styles.version}>v2.0</Text>
                     <Text style={styles.tagline}>Votre pharmacie en ligne</Text>
                 </LinearGradient>
 

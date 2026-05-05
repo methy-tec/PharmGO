@@ -1,114 +1,89 @@
-import { Alert, Linking, Platform } from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as IntentLauncher from 'expo-intent-launcher';
+import { Alert, Platform } from 'react-native';
 import Constants from 'expo-constants';
 
 const GITHUB_OWNER = 'methy-tec';
 const GITHUB_REPO = 'PharmGO';
-
-const CURRENT_VERSION = Constants.expoConfig?.version || '0.0.0';
+const CURRENT_VERSION = Constants.expoConfig.version;
 
 export const checkForAppUpdate = async () => {
   try {
-    const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`;
-
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      console.warn('❌ GitHub API error:', response.status);
-      return;
-    }
+    const response = await fetch(
+      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`
+    );
+    if (!response.ok) return;
 
     const release = await response.json();
-
-    // 🔐 Sécurité données
-    if (!release || !release.tag_name) return;
-
-    const latestVersion = sanitizeVersion(release.tag_name);
-
+    const latestVersion = release.tag_name.replace('v', '').trim();
     if (!latestVersion) return;
 
-    // 🔍 Comparaison versions
-    if (compareVersions(CURRENT_VERSION, latestVersion) >= 0) {
-      console.log('✅ App à jour');
-      return;
-    }
-
-    // 📦 Recherche APK
-    const apkAsset = release.assets?.find(asset =>
-      asset.name.toLowerCase().endsWith('.apk')
-    );
-
-    if (!apkAsset) {
-      Alert.alert(
-        "Mise à jour disponible",
-        `Version ${latestVersion} disponible, mais aucun fichier APK trouvé.`
+    if (compareVersions(CURRENT_VERSION, latestVersion) < 0) {
+      const apkAsset = release.assets.find(a =>
+        a.name.toLowerCase().endsWith('.apk')
       );
-      return;
+      if (!apkAsset) return;
+
+      Alert.alert(
+        '🚀 Mise à jour disponible',
+        `Version ${latestVersion} est disponible.\n\n${release.body || 'Améliorations et corrections.'}`,
+        [
+          { text: 'Plus tard', style: 'cancel' },
+          {
+            text: 'Mettre à jour',
+            onPress: () => downloadAndInstallAPK(apkAsset.browser_download_url)
+          }
+        ]
+      );
     }
-
-    // 🎯 Message amélioré
-    Alert.alert(
-      "🚀 Mise à jour disponible",
-      `Version actuelle: ${CURRENT_VERSION}\nNouvelle version: ${latestVersion}\n\n${formatReleaseNotes(release.body)}`,
-      [
-        {
-          text: "Ignorer",
-          style: "cancel"
-        },
-        {
-          text: "Mettre à jour",
-          onPress: () => openDownload(apkAsset.browser_download_url)
-        }
-      ],
-      { cancelable: true }
-    );
-
-  } catch (error) {
-    console.error("❌ Erreur update:", error);
+  } catch (e) {
+    console.log('Erreur update check:', e);
   }
 };
 
-// 🔧 Nettoyage version
-const sanitizeVersion = (version) => {
-  return version.replace(/[^\d.]/g, '').trim();
-};
+export const downloadAndInstallAPK = async (url) => {
+  if (Platform.OS !== 'android') return;
 
-// 📄 Format release notes
-const formatReleaseNotes = (notes) => {
-  if (!notes) return "Améliorations et corrections.";
+  const fileUri = FileSystem.documentDirectory + 'update.apk';
 
-  // Limiter taille pour Alert
-  return notes.length > 200
-    ? notes.substring(0, 200) + '...'
-    : notes;
-};
+  Alert.alert('Téléchargement...', 'La mise à jour est en cours de téléchargement.');
 
-// 🔗 Ouverture sécurisée
-const openDownload = async (url) => {
   try {
-    const supported = await Linking.canOpenURL(url);
+    const existing = await FileSystem.getInfoAsync(fileUri);
+    if (existing.exists) await FileSystem.deleteAsync(fileUri);
 
-    if (!supported) {
-      Alert.alert("Erreur", "Impossible d’ouvrir le lien.");
-      return;
-    }
+    const { uri } = await FileSystem.downloadAsync(url, fileUri);
 
-    await Linking.openURL(url);
-  } catch (err) {
-    console.error("❌ Erreur ouverture lien:", err);
+    Alert.alert(
+      '✅ Téléchargement terminé',
+      'Appuie sur Installer pour continuer.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Installer',
+          onPress: async () => {
+            const contentUri = await FileSystem.getContentUriAsync(uri);
+            await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+              data: contentUri,
+              flags: 1,
+              type: 'application/vnd.android.package-archive',
+            });
+          }
+        }
+      ]
+    );
+  } catch (e) {
+    console.error('Erreur téléchargement APK:', e);
+    Alert.alert('❌ Erreur', 'Le téléchargement a échoué. Réessaie plus tard.');
   }
 };
 
-// 🔢 Comparaison versions robuste
 const compareVersions = (current, latest) => {
-  const a = current.split('.').map(n => parseInt(n) || 0);
-  const b = latest.split('.').map(n => parseInt(n) || 0);
-
-  const maxLength = Math.max(a.length, b.length);
-
-  for (let i = 0; i < maxLength; i++) {
-    if (a[i] < b[i]) return -1;
-    if (a[i] > b[i]) return 1;
+  const a = current.split('.').map(Number);
+  const b = latest.split('.').map(Number);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if ((a[i] || 0) < (b[i] || 0)) return -1;
+    if ((a[i] || 0) > (b[i] || 0)) return 1;
   }
-
   return 0;
 };
