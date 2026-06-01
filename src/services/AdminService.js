@@ -188,6 +188,10 @@ requestSubscriptionUpgrade: async (body) => {
   const res = await api.post('/admin/subscription/request', body);
   return res.data;
 },
+requestSubscriptionRenewal: async(body) => {
+  const res = await api.post('admin/subscription/renew', body);
+  return res.data
+}
 };
 
 export default AdminService;

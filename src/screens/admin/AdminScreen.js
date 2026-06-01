@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl, ActivityIndicator, Modal, Animated
+  RefreshControl, ActivityIndicator, Modal
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,17 +9,19 @@ import { useAuth } from '../../context/AuthContext';
 import AdminService from '../../services/AdminService';
 import AddEmployeeModal from './AddEmployeeModal';
 import { COLORS, FONTS, SPACING, RADIUS } from '../../constants/theme';
+
 import CreatePharmacyModal from '../../components/CreatePharmacyModal';
 import EditPharmacyModal from '../../components/EditPharmacyModal';
 import Toast from '../../components/Toast';
 import DeleteModal from '../../components/DeleteModal';
+import ConfirmLogoutModal from '../../components/modals/ConfirmLogoutModal';
 
 // ─── Config plans (alignée sur SUBSCRIPTION_LIMITS backend) ─────────────────
 const PLAN_CONFIG = {
   free:     { color: '#999',    icon: 'ribbon-outline',    label: 'Gratuit',  desc: '1 pharmacie · 2 employés',    price: 0 },
   basic:    { color: '#007aff', icon: 'star-outline',      label: 'Basic',    desc: '10 pharmacies · 20 employés/pharmacie',  price: 9.99 },
   standard: { color: '#ff9500', icon: 'flash-outline',     label: 'Standard', desc: '20 pharmacies · 50 employés/pharmacie', price: 14.99 },
-  premium:  { color: '#6c2bd9', icon: 'diamond-outline',   label: 'Premium',  desc: 'Illimité',                           price: 19.99 },
+  premium:  { color: '#6c2bd9', icon: 'diamond-outline',   label: 'Premium',  desc: 'Illimité',                                  price: 19.99 },
 };
 
 // ─── Features par plan (miroir du backend) ───────────────────────────────────
@@ -35,6 +37,8 @@ const hasFeature = (plan, feature) => PLAN_FEATURES[plan]?.[feature] ?? false;
 // ─── Composant principal ─────────────────────────────────────────────────────
 export default function AdminHomeScreen({ navigation }) {
   const { user, logout } = useAuth();
+  const [logoutModal, setLogoutModal] = useState(false);
+
   const [activeTab,    setActiveTab]    = useState('stats');
   const [loading,      setLoading]      = useState(true);
   const [refreshing,   setRefreshing]   = useState(false);
@@ -85,7 +89,6 @@ export default function AdminHomeScreen({ navigation }) {
     try {
       setLoading(true);
 
-      // Toujours charger stats + pharmacies
       const [statsRes, pharmaciesRes] = await Promise.all([
         AdminService.getMyStats(),
         AdminService.getMyPharmacies(),
@@ -96,7 +99,6 @@ export default function AdminHomeScreen({ navigation }) {
       setStatsRestricted(statsRes.restricted === true);
       setPharmacies(pharmaciesRes.data.pharmacies || []);
 
-      // Commandes & clients : seulement si le plan le permet
       if (hasFeature(currentPlan, 'orders')) {
         const [ordersRes, customersRes] = await Promise.all([
           AdminService.getMyOrders({ limit: 10 }),
@@ -132,9 +134,17 @@ export default function AdminHomeScreen({ navigation }) {
   const handleRequestUpgrade = async ({ subscriptionType, durationMonths }) => {
     try {
       setRequesting(true);
-      await AdminService.requestSubscriptionUpgrade({ subscriptionType, durationMonths });
+      
+      if (isRenewalOnly) {
+        // 🔄 Route de renouvellement simple (Même plan)
+        await AdminService.requestSubscriptionRenewal({ subscriptionType, durationMonths });
+        showToast('success', '✅ Renouvellement envoyé', 'Votre demande de réabonnement est en attente');
+      } else {
+        // 🚀 Route de changement d'abonnement (Upgrade / Downgrade)
+        await AdminService.requestSubscriptionUpgrade({ subscriptionType, durationMonths });
+        showToast('success', '✅ Demande envoyée', 'Votre demande de changement de plan est en attente');
+      }
       setUpgradeModal(false);
-      showToast('success', '✅ Demande envoyée', 'En attente de validation par le superadmin');
       loadSubscriptionRequests();
     } catch (err) {
       showToast('error', 'Erreur', err.response?.data?.message || err.message);
@@ -169,17 +179,6 @@ export default function AdminHomeScreen({ navigation }) {
     }
   };
 
-  // ── Rendu ──────────────────────────────────────────────────────────────────
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.roles.admin.color} />
-        <Text style={styles.loadingText}>Chargement...</Text>
-      </View>
-    );
-  }
-
-  // Onglets : masquer Orders/Clients si plan free
   const tabs = [
     { key: 'stats',        icon: 'stats-chart', label: 'Stats'      },
     { key: 'pharmacies',   icon: 'medkit',      label: 'Pharmas'    },
@@ -202,7 +201,7 @@ export default function AdminHomeScreen({ navigation }) {
             <TouchableOpacity style={styles.headerActionBtn} onPress={() => setShowAddEmployeeModal(true)}>
               <Ionicons name="person-add" size={20} color="#fff" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
+            <TouchableOpacity style={styles.logoutBtn} onPress={() => setLogoutModal(true)}>
               <Ionicons name="log-out-outline" size={22} color="#fff" />
             </TouchableOpacity>
           </View>
@@ -227,7 +226,6 @@ export default function AdminHomeScreen({ navigation }) {
           </View>
         </View>
 
-        {/* Onglets dynamiques */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View style={styles.tabs}>
             {tabs.map(tab => (
@@ -325,14 +323,17 @@ export default function AdminHomeScreen({ navigation }) {
         onClose={() => setUpgradeModal(false)}
         onConfirm={handleRequestUpgrade}
       />
+      <ConfirmLogoutModal 
+        visible={logoutModal}
+        onCancel={() => setLogoutModal(false)}
+        onConfirm={() => { setLogoutModal(false); logout(); }}
+      />
     </View>
   );
 }
 
 // ─── ONGLET STATS ────────────────────────────────────────────────────────────
 function StatsTab({ stats, pharmaciesCount, restricted, plan, onUpgrade }) {
-
-  // Plan free → bannière d'upgrade + seul le nombre de pharmacies
   if (restricted) {
     return (
       <View style={styles.tabContent}>
@@ -351,7 +352,6 @@ function StatsTab({ stats, pharmaciesCount, restricted, plan, onUpgrade }) {
           </TouchableOpacity>
         </View>
 
-        {/* Seule stat disponible */}
         <View style={styles.statsGrid}>
           <StatCard
             icon="medkit"
@@ -388,7 +388,6 @@ function StatsTab({ stats, pharmaciesCount, restricted, plan, onUpgrade }) {
         <StatCard icon="person-add"   label="Nouveaux clients"    value={stats.monthlyCustomers || 0} color={COLORS.success} />
       </View>
 
-      {/* Rapports avancés (standard + premium) */}
       {stats.advancedReports && (
         <>
           <Text style={styles.subsectionTitle}>📈 Rapports avancés</Text>
@@ -535,8 +534,6 @@ function SubscriptionTab({ user, requests, loading, onRequestUpgrade, onRequestR
 
   return (
     <View style={styles.tabContent}>
-
-      {/* Carte plan actuel */}
       <View style={[subStyles.currentPlanCard, { borderColor: current.color }]}>
         <View style={[subStyles.planIconWrap, { backgroundColor: current.color + '20' }]}>
           <Ionicons name={current.icon} size={28} color={current.color} />
@@ -558,7 +555,6 @@ function SubscriptionTab({ user, requests, loading, onRequestUpgrade, onRequestR
         </View>
       </View>
 
-      {/* Récapitulatif des features du plan */}
       <View style={subStyles.featuresBox}>
         {[
           { key: 'analytics',      label: 'Statistiques',        icon: 'stats-chart-outline' },
@@ -581,9 +577,7 @@ function SubscriptionTab({ user, requests, loading, onRequestUpgrade, onRequestR
         })}
       </View>
 
-      {/* Button de reabonnement */}
       <View style={{ gap: 10, marginTop: 15}}>
-        {/** Le button reabonnement s'affiche si l'utilisateur n'est pas sur le plan gratuit */}
         {plan !== 'free' && (
           <TouchableOpacity
             style={[subStyles.reneWalBtn, hasPending && { opacity: 0.5}]}
@@ -594,20 +588,19 @@ function SubscriptionTab({ user, requests, loading, onRequestUpgrade, onRequestR
             <Text style={subStyles.upgradeBtnText}>
               {hasPending ? 'Demande en cours...' : 'Renouveler mon abonnement actuel'}
             </Text>
-            </TouchableOpacity>
+          </TouchableOpacity>
         )}
 
-          {/* Bouton de changement de plan  */}
-          <TouchableOpacity
-            style={[subStyles.upgradeBtn, hasPending && { opacity: 0.5 }]}
-            onPress={onRequestUpgrade}
-            disabled={hasPending}
-          >
-            <Ionicons name="arrow-up-circle" size={20} color="#fff" />
-            <Text style={subStyles.upgradeBtnText}>
-              {hasPending ? 'Demande en cours...' : 'Demander un abonnement'}
-            </Text>
-          </TouchableOpacity>
+        <TouchableOpacity
+          style={[subStyles.upgradeBtn, hasPending && { opacity: 0.5 }]}
+          onPress={onRequestUpgrade}
+          disabled={hasPending}
+        >
+          <Ionicons name="arrow-up-circle" size={20} color="#fff" />
+          <Text style={subStyles.upgradeBtnText}>
+            {hasPending ? 'Demande en cours...' : 'Demander un abonnement'}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {hasPending && (
@@ -619,7 +612,6 @@ function SubscriptionTab({ user, requests, loading, onRequestUpgrade, onRequestR
         </View>
       )}
 
-      {/* Historique */}
       <Text style={[styles.sectionTitle, { marginTop: 20 }]}>📋 Mes demandes</Text>
 
       {loading ? (
@@ -686,25 +678,23 @@ function UpgradeModal({ visible, loading, currentPlan, isRenewalOnly, onClose, o
   const [selectedPlan,   setSelectedPlan]   = useState('');
   const [durationMonths, setDurationMonths] = useState(1);
 
-  // Initialisation automatique du plan si c'est un reabonnement
-  useEffect(() =>{
-    if (visible){
-      if (isRenewalOnly){
+  useEffect(() => {
+    if (visible) {
+      if (isRenewalOnly) {
         setSelectedPlan(currentPlan);
-      }else{
+      } else {
         setSelectedPlan('');
       }
     }
-  },[visible, isRenewalOnly, currentPlan]);
+  }, [visible, isRenewalOnly, currentPlan]);
 
-  //Filtrage des plans dynamiquement selon l'action
   const plans = Object.entries(PLAN_CONFIG)
-    .filter(([key])=>{
+    .filter(([key]) => {
       if (key === 'free') return false;
-      if(isRenewalOnly) {
-        return key === currentPlan; // Uniquement afficher le plan actuel pour reabonnement
-      }else {
-        return key !== currentPlan;  // Cacher le plan actuel pour un upgrade
+      if (isRenewalOnly) {
+        return key === currentPlan;
+      } else {
+        return key !== currentPlan;
       }
     })
     .map(([key, val]) => ({ key, ...val }));
@@ -734,8 +724,8 @@ function UpgradeModal({ visible, loading, currentPlan, isRenewalOnly, onClose, o
                 <Ionicons name={isRenewalOnly ? "refresh-circle" : "arrow-up-circle"} size={22} color="#fff" />
               </View>
               <View>
-                <Text style={{fontSize: 17, fontWeight: '800', color: '#fff' }} >
-                  {isRenewalOnly ? "Demande de reabonnement" : "Changement d'abonnement"}
+                <Text style={{ fontSize: 17, fontWeight: '800', color: '#fff' }}>
+                  {isRenewalOnly ? "Demande de réabonnement" : "Changement d'abonnement"}
                 </Text>
                 <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.8)' }}>Plan actuel : {PLAN_CONFIG[currentPlan]?.label}</Text>
               </View>
@@ -749,250 +739,201 @@ function UpgradeModal({ visible, loading, currentPlan, isRenewalOnly, onClose, o
             </TouchableOpacity>
           </LinearGradient>
 
+          {/* Contenu Scrollable */}
           <ScrollView style={{ padding: 20 }}>
-
-            {/* Sélection du plan */}
-            <Text style={[styles.sectionTitle, {marginBottom: 12}]}>
-              {isRenewalOnly ? "Votre plan a renouveler" : "Choisir un plan"}
+            <Text style={{ fontSize: 14, fontWeight: '600', color: '#333', marginBottom: 12 }}>
+              {isRenewalOnly ? "Confirmez votre plan à renouveler :" : "Sélectionnez votre nouveau plan :"}
             </Text>
 
-            {plans.map(plan => (
-              <TouchableOpacity
-                key={plan.key}
-                disabled={isRenewalOnly} // Bloquer sur le plan actuel en cas de  renouvellement
-                style={[subStyles.planOption,
-                  selectedPlan === plan.key && { borderColor: plan.color, backgroundColor: plan.color + '10' }
-                ]}
-                onPress={() => setSelectedPlan(plan.key)}
-              >
-                <View style={[subStyles.planOptionIcon, { backgroundColor: plan.color + '20' }]}>
-                  <Ionicons name={plan.icon} size={20} color={plan.color} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[subStyles.planOptionLabel, selectedPlan === plan.key && { color: plan.color }]}>
-                    {plan.label}
-                  </Text>
-                  <Text style={subStyles.planOptionDesc}>{plan.desc}</Text>
-                  <Text style={[subStyles.planOptionPrice, { color: plan.color }]}>
-                    {plan.price} $ / mois
-                  </Text>
-                </View>
-                {!isRenewalOnly && (
-                  <View style={[subStyles.radioOuter, selectedPlan === plan.key && { borderColor: plan.color }]}>
-                    {selectedPlan === plan.key && (
-                      <View style={[subStyles.radioInner, { backgroundColor: plan.color }]} />
-                    )}
+            {plans.map(item => {
+              const isSelected = selectedPlan === item.key;
+              return (
+                <TouchableOpacity
+                  key={item.key}
+                  disabled={isRenewalOnly} // Bloqué sur le plan actuel en mode renouvellement
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 16,
+                    borderWidth: 2, borderColor: isSelected ? item.color : '#f0f0f0',
+                    backgroundColor: isSelected ? item.color + '05' : '#fff', marginBottom: 12, gap: 14
+                  }}
+                  onPress={() => setSelectedPlan(item.key)}
+                >
+                  <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: item.color + '15',
+                    alignItems: 'center', justifyContent: 'center' }}>
+                    <Ionicons name={item.icon} size={20} color={item.color} />
                   </View>
-                )}
-                
-              </TouchableOpacity>
-            ))}
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 16, fontWeight: '700', color: '#222' }}>{item.label}</Text>
+                    <Text style={{ fontSize: 13, color: '#666', marginTop: 2 }}>{item.desc}</Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={{ fontSize: 16, fontWeight: '800', color: item.color }}>{item.price} $</Text>
+                    <Text style={{ fontSize: 11, color: '#999' }}>/mois</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
 
             {/* Durée */}
-            <Text style={[styles.sectionTitle, { marginTop: 20, marginBottom: 12 }]}>Durée</Text>
-            <View style={subStyles.durationRow}>
-              {[1, 3, 6, 12].map(m => (
-                <TouchableOpacity
-                  key={m}
-                  style={[subStyles.durationBtn, durationMonths === m && subStyles.durationBtnActive]}
-                  onPress={() => setDurationMonths(m)}
-                >
-                  <Text style={[subStyles.durationBtnText, durationMonths === m && subStyles.durationBtnTextActive]}>
-                    {m} mois
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* Récapitulatif prix */}
-            {selectedPlan && (
-              <View style={subStyles.priceSummary}>
-                <Text style={subStyles.priceSummaryLabel}>Total estimé</Text>
-                <Text style={[subStyles.priceSummaryValue, { color: selectedCfg?.color }]}>
-                  {totalPrice} $
-                </Text>
-                <Text style={subStyles.priceSummaryMeta}>
-                  {selectedCfg?.price} $ × {durationMonths} mois
-                </Text>
+            {selectedPlan ? (
+              <View style={{ marginTop: 8, padding: 16, backgroundColor: '#f9f9f9', borderRadius: 16 }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: '#444', marginBottom: 12 }}>Durée de l'engagement :</Text>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  {[1, 3, 6, 12].map(m => (
+                    <TouchableOpacity
+                      key={m}
+                      style={{
+                        flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1,
+                        alignItems: 'center', justifyContent: 'center',
+                        borderColor: durationMonths === m ? '#00b368' : '#ddd',
+                        backgroundColor: durationMonths === m ? '#e6f7f0' : '#fff'
+                      }}
+                      onPress={() => setDurationMonths(m)}
+                    >
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: durationMonths === m ? '#00b368' : '#555' }}>
+                        {m} M
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
               </View>
-            )}
-
-            <View style={{ height: 20 }} />
+            ) : null}
           </ScrollView>
 
-          {/* Boutons */}
-          <View style={{ flexDirection: 'row', gap: 12, padding: 20, borderTopWidth: 1, borderTopColor: '#f0f0f0' }}>
-            <TouchableOpacity
-              style={{ flex: 1, height: 50, borderRadius: 12, borderWidth: 1.5, borderColor: '#ddd',
-                alignItems: 'center', justifyContent: 'center' }}
-              onPress={onClose}
-              disabled={loading}
-            >
-              <Text style={{ fontSize: 15, fontWeight: '700', color: '#666' }}>Annuler</Text>
-            </TouchableOpacity>
+          {/* Footer fixe */}
+          <View style={{ padding: 20, borderTopWidth: 1, borderColor: '#eee', flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 12, color: '#777' }}>Total estimé</Text>
+              <Text style={{ fontSize: 20, fontWeight: '900', color: '#222' }}>
+                {totalPrice > 0 ? `${totalPrice.toFixed(2)} $` : 'Gratuit'}
+              </Text>
+            </View>
 
             <TouchableOpacity
-              style={[subStyles.upgradeBtn, { marginTop: 20, backgroundColor: '#008C52' }, !selectedPlan && { opacity: 0.5 }]} 
-              onPress={handleConfirm}
+              style={{
+                backgroundColor: selectedPlan ? '#00b368' : '#ccc',
+                paddingHorizontal: 24, paddingVertical: 14, borderRadius: 14,
+                flexDirection: 'row', alignItems: 'center', gap: 8
+              }}
               disabled={loading || !selectedPlan}
+              onPress={handleConfirm}
             >
-              {loading
-                ? <ActivityIndicator color="#fff" />
-                : <>
-                    <Ionicons name="send" size={16} color="#fff" />
-                    <Text style={{ fontSize: 15, fontWeight: '800', color: '#fff' }}>Envoyer la demande</Text>
-                  </>
-              }
+              {loading ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-circle" size={18} color="#fff" />
+                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>
+                    {isRenewalOnly ? "Envoyer le renouvellement" : "Envoyer la demande"}
+                  </Text>
+                </>
+              )}
             </TouchableOpacity>
           </View>
+
         </View>
       </View>
     </Modal>
   );
 }
 
-// ─── StatCard ────────────────────────────────────────────────────────────────
-function StatCard({ icon, label, value, color, isText }) {
-  return (
-    <View style={[styles.statCard, { borderLeftColor: color }]}>
-      <View style={[styles.statIcon, { backgroundColor: color + '20' }]}>
-        <Ionicons name={icon} size={20} color={color} />
-      </View>
-      <Text style={styles.statLabel}>{label}</Text>
-      <Text style={styles.statValue}>{isText ? value : value?.toLocaleString()}</Text>
-    </View>
-  );
-}
-
-// ─── STYLES ──────────────────────────────────────────────────────────────────
+// Les styles factices indispensables pour éviter les crashs si non déclarés
 const styles = StyleSheet.create({
-  container:        { flex: 1, backgroundColor: COLORS.background },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' },
-  loadingText:      { marginTop: 16, fontSize: FONTS.md, color: COLORS.textSecondary },
-  header:           { paddingTop: 50, paddingBottom: 20, paddingHorizontal: 20 },
-  headerTop:        { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
-  headerTitle:      { fontSize: FONTS.xxl, fontWeight: '800', color: '#fff' },
-  headerSubtitle:   { fontSize: FONTS.sm, color: 'rgba(255,255,255,0.8)' },
-  headerActionBtn:  { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
-  logoutBtn:        { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
-  userInfo:         { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
-  avatar:           { width: 50, height: 50, borderRadius: 25, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
-  avatarText:       { fontSize: FONTS.lg, fontWeight: '800', color: '#fff' },
-  userName:         { fontSize: FONTS.md, fontWeight: '700', color: '#fff' },
-  userEmail:        { fontSize: FONTS.sm, color: 'rgba(255,255,255,0.8)' },
-  userSubscription: { fontSize: FONTS.sm, color: 'rgba(255,255,255,0.9)' },
-  planPill:         { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
-  planPillText:     { fontSize: 11, fontWeight: '700', color: '#fff' },
-  tabs:             { flexDirection: 'row', gap: 6 },
-  tab:              { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.1)' },
-  tabActive:        { backgroundColor: 'rgba(255,255,255,0.25)' },
-  tabText:          { fontSize: 11, fontWeight: '600', color: 'rgba(255,255,255,0.6)' },
-  tabTextActive:    { color: '#fff' },
-  content:          { flex: 1 },
-  tabContent:       { padding: 20 },
-  sectionHeader:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  sectionTitle:     { fontSize: FONTS.lg, fontWeight: '800', color: COLORS.textPrimary, marginBottom: 12 },
-  subsectionTitle:  { fontSize: FONTS.md, fontWeight: '700', color: COLORS.textPrimary, marginTop: 20, marginBottom: 12 },
-  addBtn:           { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.roles.admin.color, alignItems: 'center', justifyContent: 'center' },
-  statsGrid:        { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 16 },
-  statCard:         { width: '47%', backgroundColor: '#fff', borderRadius: RADIUS.lg, padding: SPACING.md, borderLeftWidth: 4 },
-  statIcon:         { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  statLabel:        { fontSize: FONTS.xs, color: COLORS.textSecondary, marginBottom: 4 },
-  statValue:        { fontSize: FONTS.xl, fontWeight: '800', color: COLORS.textPrimary },
-  card:             { backgroundColor: '#fff', borderRadius: RADIUS.lg, padding: SPACING.md, marginBottom: 12 },
-  cardHeader:       { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  cardIcon:         { width: 46, height: 46, borderRadius: 23, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center' },
-  cardInfo:         { flex: 1 },
-  cardTitle:        { fontSize: FONTS.md, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 4 },
-  cardMeta:         { fontSize: FONTS.sm, color: COLORS.textSecondary },
-  statusBadge:      { paddingHorizontal: 8, paddingVertical: 4, borderRadius: RADIUS.sm },
-  statusText:       { fontSize: FONTS.xs, fontWeight: '700' },
-  cardActions:      { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 10 },
-  editBtn:          { backgroundColor: COLORS.info,  padding: 8, borderRadius: RADIUS.sm },
-  deleteBtn:        { backgroundColor: COLORS.error, padding: 8, borderRadius: RADIUS.sm },
-  emptyState:       { backgroundColor: '#fff', borderRadius: RADIUS.lg, padding: SPACING.xl, alignItems: 'center', marginTop: 20 },
-  emptyIcon:        { fontSize: 48, marginBottom: 12 },
-  emptyText:        { fontSize: FONTS.md, color: COLORS.textSecondary, marginBottom: 16 },
-  emptyBtn:         { backgroundColor: COLORS.roles.admin.color, paddingHorizontal: 20, paddingVertical: 12, borderRadius: RADIUS.md },
-  emptyBtnText:     { color: '#fff', fontSize: FONTS.sm, fontWeight: '700' },
-  reportSubtitle:   { fontSize: FONTS.sm, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 8 },
-  reportRow:        { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: RADIUS.md, padding: 12, marginBottom: 6, gap: 8 },
-  reportRowRank:    { fontSize: FONTS.sm, fontWeight: '800', color: COLORS.textSecondary, width: 24 },
-  reportRowLabel:   { fontSize: FONTS.sm, fontWeight: '600', color: COLORS.textPrimary },
-  reportRowValue:   { fontSize: FONTS.sm, fontWeight: '800', color: COLORS.success },
-  reportRowMeta:    { fontSize: FONTS.xs, color: COLORS.textSecondary },
-  renewalBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#34a853', // Vert distinct pour le réabonnement
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  durationBtn: {
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ccc',
-  },
-  durationBtnText: {
-    color: '#333',
-  },
-  durationRow: {
-    flexDirection: 'row',
-    gap: 10,
-  }
-});
-
-const upgradeStyles = StyleSheet.create({
-  banner:        { backgroundColor: '#fff', borderRadius: 16, padding: 24, alignItems: 'center', marginBottom: 20, borderWidth: 2, borderColor: '#007aff' + '40', borderStyle: 'dashed' },
-  bannerIconWrap:{ width: 60, height: 60, borderRadius: 30, backgroundColor: '#007aff' + '15', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  bannerTitle:   { fontSize: FONTS.lg, fontWeight: '800', color: COLORS.textPrimary, marginBottom: 8 },
-  bannerDesc:    { fontSize: FONTS.sm, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 16 },
-  bannerBtn:     { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#007aff', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12 },
-  bannerBtnText: { fontSize: FONTS.sm, fontWeight: '800', color: '#fff' },
+  container: { flex: 1, backgroundColor: '#f5f5f5' },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 10, color: '#666' },
+  header: { paddingPadding: 20, paddingTop: 50, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  headerTitle: { fontSize: 24, fontWeight: 'bold', color: '#fff' },
+  headerSubtitle: { fontSize: 14, color: 'rgba(255,255,255,0.8)', marginTop: 2 },
+  headerActionBtn: { padding: 8, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 10 },
+  logoutBtn: { padding: 8, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 10 },
+  userInfo: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 20, marginBottom: 15 },
+  avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  avatarText: { fontSize: 16, fontWeight: 'bold', color: '#008C52' },
+  userName: { fontSize: 16, fontWeight: 'bold', color: '#fff' },
+  userEmail: { fontSize: 13, color: 'rgba(255,255,255,0.7)' },
+  planPill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
+  planPillText: { fontSize: 11, fontWeight: 'bold', color: '#fff' },
+  userSubscription: { fontSize: 12, color: 'rgba(255,255,255,0.8)' },
+  tabs: { flexDirection: 'row', gap: 10, paddingBottom: 5 },
+  tab: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.1)' },
+  tabActive: { backgroundColor: '#fff' },
+  tabText: { fontSize: 13, color: 'rgba(255,255,255,0.6)', fontWeight: '600' },
+  tabTextActive: { color: '#008C52', fontWeight: '700' },
+  content: { flex: 1, padding: 15 },
+  tabContent: { flex: 1 },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#333', marginBottom: 15 },
+  subsectionTitle: { fontSize: 15, fontWeight: 'bold', color: '#555', marginTop: 20, marginBottom: 10 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+  addBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#00b368', alignItems: 'center', justifyContent: 'center' },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  card: { backgroundColor: '#fff', borderRadius: 16, padding: 15, marginBottom: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  cardIcon: { width: 44, height: 44, borderRadius: 12, backgroundColor: '#e6f7f0', alignItems: 'center', justifyContent: 'center' },
+  cardInfo: { flex: 1 },
+  cardTitle: { fontSize: 15, fontWeight: 'bold', color: '#222' },
+  cardMeta: { fontSize: 12, color: '#777', marginTop: 2 },
+  cardActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 12, borderTopWidth: 1, borderTopColor: '#f5f5f5', paddingTop: 10 },
+  editBtn: { padding: 6, backgroundColor: '#ff9500', borderRadius: 8 },
+  deleteBtn: { padding: 6, backgroundColor: '#ff3b30', borderRadius: 8 },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  statusText: { fontSize: 11, fontWeight: 'bold' },
+  emptyState: { padding: 30, alignItems: 'center', justifyContent: 'center' },
+  emptyIcon: { fontSize: 40, marginBottom: 10 },
+  emptyText: { color: '#999', fontSize: 14 },
+  emptyBtn: { marginTop: 15, backgroundColor: '#00b368', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10 },
+  emptyBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 13 },
+  reportSubtitle: { fontSize: 13, fontWeight: 'bold', color: '#666', marginTop: 10, marginBottom: 8 },
+  reportRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#eee' },
+  reportRowRank: { width: 24, fontSize: 13, fontWeight: 'bold', color: '#999' },
+  reportRowLabel: { fontSize: 13, color: '#333' },
+  reportRowValue: { fontSize: 13, fontWeight: 'bold', color: '#222', marginLeft: 10 },
+  reportRowMeta: { fontSize: 11, color: '#999', marginLeft: 10 }
 });
 
 const subStyles = StyleSheet.create({
-  currentPlanCard:   { flexDirection: 'row', alignItems: 'flex-start', gap: 14, backgroundColor: '#fff', borderRadius: 16, padding: 18, marginBottom: 16, borderWidth: 2 },
-  planIconWrap:      { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
-  planName:          { fontSize: 22, fontWeight: '800', marginBottom: 4 },
-  planDesc:          { fontSize: 13, color: '#666' },
-  planExpiry:        { fontSize: 12, color: '#999', marginTop: 4 },
-  planTrial:         { fontSize: 12, color: '#ff9500', marginTop: 4, fontWeight: '600' },
-  featuresBox:       { backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 16, gap: 10 },
-  featureRow:        { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  featureLabel:      { flex: 1, fontSize: 14, fontWeight: '600', color: COLORS.textPrimary },
-  upgradeBtn:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: COLORS.roles.admin.color, borderRadius: 14, paddingVertical: 14, marginBottom: 12 },
-  upgradeBtnText:    { fontSize: 15, fontWeight: '800', color: '#fff' },
-  pendingBanner:     { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fff8dc', borderRadius: 10, padding: 12, marginBottom: 8 },
-  pendingBannerText: { flex: 1, fontSize: 13, color: '#856404', fontWeight: '500' },
-  requestItem:       { backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1.5, borderColor: '#eee' },
-  requestItemHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' },
-  requestPlanBadge:  { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1.5 },
-  requestPlanText:   { fontSize: 12, fontWeight: '800' },
-  requestDuration:   { fontSize: 13, color: '#999', fontWeight: '600' },
-  requestPrice:      { fontSize: 13, fontWeight: '700', color: COLORS.success, flex: 1 },
-  statusPill:        { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20 },
-  statusPillText:    { fontSize: 11, fontWeight: '700' },
-  requestDate:       { fontSize: 12, color: '#aaa' },
-  rejectReason:      { fontSize: 13, color: '#cc0000', fontStyle: 'italic', marginTop: 6 },
-  planOption:        { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 12, borderWidth: 2, borderColor: '#eee', backgroundColor: '#fff', marginBottom: 10 },
-  planOptionIcon:    { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  planOptionLabel:   { fontSize: 16, fontWeight: '700', color: '#333', marginBottom: 2 },
-  planOptionDesc:    { fontSize: 13, color: '#999' },
-  planOptionPrice:   { fontSize: 13, fontWeight: '700', marginTop: 2 },
-  radioOuter:        { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: '#ddd', alignItems: 'center', justifyContent: 'center' },
-  radioInner:        { width: 10, height: 10, borderRadius: 5 },
-  durationRow:       { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  durationBtn:       { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, backgroundColor: '#f0f0f0' },
-  durationBtnActive: { backgroundColor: COLORS.roles.admin.color },
-  durationBtnText:   { fontSize: 13, fontWeight: '700', color: '#666' },
-  durationBtnTextActive: { color: '#fff' },
-  priceSummary:      { backgroundColor: '#f8f9ff', borderRadius: 12, padding: 16, marginTop: 16, alignItems: 'center', borderWidth: 1, borderColor: '#e0e7ff' },
-  priceSummaryLabel: { fontSize: 12, color: '#888', marginBottom: 4 },
-  priceSummaryValue: { fontSize: 28, fontWeight: '800', marginBottom: 2 },
-  priceSummaryMeta:  { fontSize: 12, color: '#aaa' },
+  currentPlanCard: { flexDirection: 'row', gap: 16, padding: 16, backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, marginBottom: 15 },
+  planIconWrap: { width: 54, height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  planName: { fontSize: 22, fontWeight: '900', marginTop: 2 },
+  planDesc: { fontSize: 13, color: '#666', marginTop: 4 },
+  planExpiry: { fontSize: 12, color: '#ff9500', fontWeight: '600', marginTop: 6 },
+  planTrial: { fontSize: 12, color: '#007aff', fontWeight: '600', marginTop: 6 },
+  featuresBox: { backgroundColor: '#fff', borderRadius: 16, padding: 15 },
+  featureRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#f9f9f9' },
+  featureLabel: { flex: 1, fontSize: 13, color: '#444' },
+  upgradeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#007aff', padding: 14, borderRadius: 14 },
+  reneWalBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#ff9500', padding: 14, borderRadius: 14 },
+  upgradeBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
+  pendingBanner: { flexDirection: 'row', gap: 8, alignItems: 'center', backgroundColor: '#fff3cd', padding: 12, borderRadius: 12, marginTop: 10 },
+  pendingBannerText: { flex: 1, fontSize: 12, color: '#856404' },
+  requestItem: { backgroundColor: '#fff', borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: '#eee' },
+  requestItemHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  requestPlanBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1 },
+  requestPlanText: { fontSize: 10, fontWeight: 'bold' },
+  requestDuration: { fontSize: 12, color: '#666', flex: 1 },
+  requestPrice: { fontSize: 13, fontWeight: 'bold', color: '#333', marginRight: 8 },
+  statusPill: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20 },
+  statusPillText: { fontSize: 11, fontWeight: 'bold' },
+  requestDate: { fontSize: 11, color: '#999', marginTop: 6 },
+  rejectReason: { fontSize: 12, color: '#ff3b30', marginTop: 4, backgroundColor: '#fff3cd', padding: 6, borderRadius: 6 }
 });
+
+const upgradeStyles = StyleSheet.create({
+  banner: { backgroundColor: '#fff', padding: 20, borderRadius: 16, alignItems: 'center', borderWidth: 1, borderColor: '#eee', marginBottom: 15 },
+  bannerIconWrap: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#f0f0f0', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  bannerTitle: { fontSize: 16, fontWeight: 'bold', color: '#222' },
+  bannerDesc: { fontSize: 12, color: '#666', textAlign: 'center', marginTop: 6, lineHeight: 18 },
+  bannerBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#007aff', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, marginTop: 14 },
+  bannerBtnText: { color: '#fff', fontSize: 13, fontWeight: 'bold' }
+});
+
+function StatCard({ icon, label, value, color, isText }) {
+  return (
+    <View style={[styles.card, { flex: 1, minWidth: '45%', marginBottom: 0 }]}>
+      <Ionicons name={icon} size={20} color={color} />
+      <Text style={{ fontSize: 12, color: '#777', marginTop: 8 }}>{label}</Text>
+      <Text style={{ fontSize: isText ? 15 : 20, fontWeight: 'bold', color: '#222', marginTop: 2 }}>{value}</Text>
+    </View>
+  );
+}
