@@ -61,6 +61,9 @@ export default function AdminHomeScreen({ navigation }) {
   const [requesting,           setRequesting]           = useState(false);
   const [upgradeModal,         setUpgradeModal]         = useState(false);
 
+  // Demande de reabonnement
+  const [isRenewalOnly, setIsRenewalOnly] = useState(false);
+
   // ── Helpers ────────────────────────────────────────────────────────────────
   const currentPlan = user?.subscriptionType || 'free';
 
@@ -277,7 +280,8 @@ export default function AdminHomeScreen({ navigation }) {
             user={user}
             requests={subscriptionRequests}
             loading={subLoading}
-            onRequestUpgrade={() => setUpgradeModal(true)}
+            onRequestUpgrade={() => { setIsRenewalOnly(false); setUpgradeModal(true);}}
+            onRequestRenewal={() => { setIsRenewalOnly(true); setUpgradeModal(true);}}
           />
         )}
         <View style={{ height: 100 }} />
@@ -317,6 +321,7 @@ export default function AdminHomeScreen({ navigation }) {
         visible={upgradeModal}
         loading={requesting}
         currentPlan={currentPlan}
+        isRenewalOnly={isRenewalOnly}
         onClose={() => setUpgradeModal(false)}
         onConfirm={handleRequestUpgrade}
       />
@@ -523,7 +528,7 @@ function CustomersTab({ customers }) {
 }
 
 // ─── ONGLET ABONNEMENT ───────────────────────────────────────────────────────
-function SubscriptionTab({ user, requests, loading, onRequestUpgrade }) {
+function SubscriptionTab({ user, requests, loading, onRequestUpgrade, onRequestRenewal }) {
   const plan    = user?.subscriptionType || 'free';
   const current = PLAN_CONFIG[plan] || PLAN_CONFIG.free;
   const hasPending = requests.some(r => r.status === 'pending');
@@ -576,17 +581,34 @@ function SubscriptionTab({ user, requests, loading, onRequestUpgrade }) {
         })}
       </View>
 
-      {/* Bouton upgrade */}
-      <TouchableOpacity
-        style={[subStyles.upgradeBtn, hasPending && { opacity: 0.5 }]}
-        onPress={onRequestUpgrade}
-        disabled={hasPending}
-      >
-        <Ionicons name="arrow-up-circle" size={20} color="#fff" />
-        <Text style={subStyles.upgradeBtnText}>
-          {hasPending ? 'Demande en cours...' : 'Demander un abonnement'}
-        </Text>
-      </TouchableOpacity>
+      {/* Button de reabonnement */}
+      <View style={{ gap: 10, marginTop: 15}}>
+        {/** Le button reabonnement s'affiche si l'utilisateur n'est pas sur le plan gratuit */}
+        {plan !== 'free' && (
+          <TouchableOpacity
+            style={[subStyles.reneWalBtn, hasPending && { opacity: 0.5}]}
+            onPress={onRequestRenewal}
+            disabled={hasPending}
+          >
+            <Ionicons name="refresh-circle" size={20} color="#fff"/>
+            <Text style={subStyles.upgradeBtnText}>
+              {hasPending ? 'Demande en cours...' : 'Renouveler mon abonnement actuel'}
+            </Text>
+            </TouchableOpacity>
+        )}
+
+          {/* Bouton de changement de plan  */}
+          <TouchableOpacity
+            style={[subStyles.upgradeBtn, hasPending && { opacity: 0.5 }]}
+            onPress={onRequestUpgrade}
+            disabled={hasPending}
+          >
+            <Ionicons name="arrow-up-circle" size={20} color="#fff" />
+            <Text style={subStyles.upgradeBtnText}>
+              {hasPending ? 'Demande en cours...' : 'Demander un abonnement'}
+            </Text>
+          </TouchableOpacity>
+      </View>
 
       {hasPending && (
         <View style={subStyles.pendingBanner}>
@@ -660,13 +682,31 @@ function SubscriptionTab({ user, requests, loading, onRequestUpgrade }) {
 }
 
 // ─── MODAL UPGRADE ───────────────────────────────────────────────────────────
-function UpgradeModal({ visible, loading, currentPlan, onClose, onConfirm }) {
+function UpgradeModal({ visible, loading, currentPlan, isRenewalOnly, onClose, onConfirm }) {
   const [selectedPlan,   setSelectedPlan]   = useState('');
   const [durationMonths, setDurationMonths] = useState(1);
 
-  // Plans disponibles sauf le plan actuel
+  // Initialisation automatique du plan si c'est un reabonnement
+  useEffect(() =>{
+    if (visible){
+      if (isRenewalOnly){
+        setSelectedPlan(currentPlan);
+      }else{
+        setSelectedPlan('');
+      }
+    }
+  },[visible, isRenewalOnly, currentPlan]);
+
+  //Filtrage des plans dynamiquement selon l'action
   const plans = Object.entries(PLAN_CONFIG)
-    .filter(([key]) => key !== 'free' && key !== currentPlan)
+    .filter(([key])=>{
+      if (key === 'free') return false;
+      if(isRenewalOnly) {
+        return key === currentPlan; // Uniquement afficher le plan actuel pour reabonnement
+      }else {
+        return key !== currentPlan;  // Cacher le plan actuel pour un upgrade
+      }
+    })
     .map(([key, val]) => ({ key, ...val }));
 
   const selectedCfg  = PLAN_CONFIG[selectedPlan];
@@ -691,10 +731,12 @@ function UpgradeModal({ visible, loading, currentPlan, onClose, onConfirm }) {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
               <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.2)',
                 alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name="arrow-up-circle" size={22} color="#fff" />
+                <Ionicons name={isRenewalOnly ? "refresh-circle" : "arrow-up-circle"} size={22} color="#fff" />
               </View>
               <View>
-                <Text style={{ fontSize: 17, fontWeight: '800', color: '#fff' }}>Demande d'abonnement</Text>
+                <Text style={{fontSize: 17, fontWeight: '800', color: '#fff' }} >
+                  {isRenewalOnly ? "Demande de reabonnement" : "Changement d'abonnement"}
+                </Text>
                 <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.8)' }}>Plan actuel : {PLAN_CONFIG[currentPlan]?.label}</Text>
               </View>
             </View>
@@ -710,10 +752,14 @@ function UpgradeModal({ visible, loading, currentPlan, onClose, onConfirm }) {
           <ScrollView style={{ padding: 20 }}>
 
             {/* Sélection du plan */}
-            <Text style={[styles.sectionTitle, { marginBottom: 12 }]}>Choisir un plan</Text>
+            <Text style={[styles.sectionTitle, {marginBottom: 12}]}>
+              {isRenewalOnly ? "Votre plan a renouveler" : "Choisir un plan"}
+            </Text>
+
             {plans.map(plan => (
               <TouchableOpacity
                 key={plan.key}
+                disabled={isRenewalOnly} // Bloquer sur le plan actuel en cas de  renouvellement
                 style={[subStyles.planOption,
                   selectedPlan === plan.key && { borderColor: plan.color, backgroundColor: plan.color + '10' }
                 ]}
@@ -731,11 +777,14 @@ function UpgradeModal({ visible, loading, currentPlan, onClose, onConfirm }) {
                     {plan.price} $ / mois
                   </Text>
                 </View>
-                <View style={[subStyles.radioOuter, selectedPlan === plan.key && { borderColor: plan.color }]}>
-                  {selectedPlan === plan.key && (
-                    <View style={[subStyles.radioInner, { backgroundColor: plan.color }]} />
-                  )}
-                </View>
+                {!isRenewalOnly && (
+                  <View style={[subStyles.radioOuter, selectedPlan === plan.key && { borderColor: plan.color }]}>
+                    {selectedPlan === plan.key && (
+                      <View style={[subStyles.radioInner, { backgroundColor: plan.color }]} />
+                    )}
+                  </View>
+                )}
+                
               </TouchableOpacity>
             ))}
 
@@ -781,13 +830,11 @@ function UpgradeModal({ visible, loading, currentPlan, onClose, onConfirm }) {
             >
               <Text style={{ fontSize: 15, fontWeight: '700', color: '#666' }}>Annuler</Text>
             </TouchableOpacity>
+
             <TouchableOpacity
-              style={[{ flex: 2, height: 50, borderRadius: 12, backgroundColor: '#00b368',
-                flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-                (!selectedPlan || loading) && { opacity: 0.4 }
-              ]}
+              style={[subStyles.upgradeBtn, { marginTop: 20, backgroundColor: '#008C52' }, !selectedPlan && { opacity: 0.5 }]} 
               onPress={handleConfirm}
-              disabled={!selectedPlan || loading}
+              disabled={loading || !selectedPlan}
             >
               {loading
                 ? <ActivityIndicator color="#fff" />
@@ -874,6 +921,29 @@ const styles = StyleSheet.create({
   reportRowLabel:   { fontSize: FONTS.sm, fontWeight: '600', color: COLORS.textPrimary },
   reportRowValue:   { fontSize: FONTS.sm, fontWeight: '800', color: COLORS.success },
   reportRowMeta:    { fontSize: FONTS.xs, color: COLORS.textSecondary },
+  renewalBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#34a853', // Vert distinct pour le réabonnement
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  durationBtn: {
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ccc',
+  },
+  durationBtnText: {
+    color: '#333',
+  },
+  durationRow: {
+    flexDirection: 'row',
+    gap: 10,
+  }
 });
 
 const upgradeStyles = StyleSheet.create({
