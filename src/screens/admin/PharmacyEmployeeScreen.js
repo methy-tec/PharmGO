@@ -626,11 +626,12 @@ const styles = StyleSheet.create({
   },
   modalBox: { backgroundColor: '#fff', width: '85%', borderRadius: 12, padding: 20 },
   modalHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
-  modalTitle:  { fontSize: 18, fontWeight: '700', marginBottom: 10 },
+  modalTitle:  { fontSize: 18, fontWeight: '700', marginBottom: 10, color: COLORS.textSecondary },
   modalHint:   { fontSize: FONTS.sm, color: COLORS.textSecondary, marginBottom: 14, lineHeight: 20 },
   modalInput:  {
     borderWidth: 1, borderColor: '#ccc', borderRadius: 8,
     padding: 10, marginBottom: 20,
+    color: COLORS.textPrimary
   },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 16 },
   modalCancel:  { color: 'gray', fontSize: FONTS.sm },
