@@ -9,7 +9,8 @@ import {
     Platform,
     ScrollView,
     ActivityIndicator,
-    Alert
+    Alert,
+    Image
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -78,7 +79,7 @@ export default function LoginScreen({ navigation }) {
 
     return (
         <KeyboardAvoidingView
-            style={StyleSheet.container}
+            style={styles.container}
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
             <ScrollView
@@ -88,13 +89,18 @@ export default function LoginScreen({ navigation }) {
             >
                 {/* header avec gradient */}
                 <LinearGradient
-                    colors={['#00b368', '#008C52']}
+                    colors={['#1a3a5c', '#2e7fbd']}
                     style={styles.header}
+                    start={{ x: 0, y: 0}}
+                    end={{ x: 1, y: 1}}
                 >
-                    <Text style={styles.logo}>💊</Text>
-                    <Text style={styles.appName}>PharmaGO</Text>
-                    <Text style={styles.version}>v2.0</Text>
+                    <Image 
+                        source={require('../../../assets/logo.png')}
+                        style={styles.logo}
+                        resizeMode="contain"
+                    />
                     <Text style={styles.tagline}>Votre pharmacie en ligne</Text>
+                    <Text style={styles.version}>v2.0</Text>
                 </LinearGradient>
 
                 {/* Formulaire */}
@@ -162,8 +168,10 @@ export default function LoginScreen({ navigation }) {
                         disabled={loading}
                     >
                         <LinearGradient 
-                            colors={['#00b368', '#008C52']}
+                            colors={['#1a3a5c', '#2e7fbd']}
                             style={styles.loginButtonGradient}
+                            start={{ x: 0, y: 0}}
+                            end={{ x: 1, y: 0}}
                         >
                             {loading ? (
                                 <ActivityIndicator color="#fff"/>
@@ -219,7 +227,8 @@ const styles = StyleSheet.create({
         alignItems: 'center'
     },
     logo: {
-        fontSize: 64,
+        width: 170,
+        height: 170,
         marginBottom: 10
     },
     appName: {
@@ -292,7 +301,7 @@ const styles = StyleSheet.create({
         marginTop: 8
     },
     forgotPasswordText: {
-        color: '#00b368',
+        color: '#2e7fbd',
         fontSize: 14,
         fontWeight: '600'
     },
@@ -337,7 +346,7 @@ const styles = StyleSheet.create({
         fontSize: 15,
     },
     signupLink: {
-        color: '#00b368',
+        color: '#2e7fbd',
         fontWeight: '700'
     }
 })
