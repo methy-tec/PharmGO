@@ -89,10 +89,8 @@ export default function LoginScreen({ navigation }) {
             >
                 {/* header avec gradient */}
                 <LinearGradient
-                    colors={['#1a3a5c', '#2e7fbd']}
+                    colors={['#00b368', '#008C52']}
                     style={styles.header}
-                    start={{ x: 0, y: 0}}
-                    end={{ x: 1, y: 1}}
                 >
                     <Image 
                         source={require('../../../assets/logo.png')}
@@ -168,7 +166,7 @@ export default function LoginScreen({ navigation }) {
                         disabled={loading}
                     >
                         <LinearGradient 
-                            colors={['#1a3a5c', '#2e7fbd']}
+                            colors={['#008C52', '#008C52']}
                             style={styles.loginButtonGradient}
                             start={{ x: 0, y: 0}}
                             end={{ x: 1, y: 0}}
@@ -301,7 +299,7 @@ const styles = StyleSheet.create({
         marginTop: 8
     },
     forgotPasswordText: {
-        color: '#2e7fbd',
+        color: '#008C52',
         fontSize: 14,
         fontWeight: '600'
     },
@@ -346,7 +344,7 @@ const styles = StyleSheet.create({
         fontSize: 15,
     },
     signupLink: {
-        color: '#2e7fbd',
+        color: '#008C52',
         fontWeight: '700'
     }
 })

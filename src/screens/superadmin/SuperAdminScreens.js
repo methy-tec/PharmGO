@@ -35,7 +35,7 @@ const TABS = [
 ];
 
 // ─── Composant principal ─────────────────────────────────────────────────────
-export default function SuperAdminScreens() {
+export default function SuperAdminScreens({ navigation }) {
     const {
         user, logout,
         getGlobalStats, getAllUsers, getAllPharmacies,
@@ -305,6 +305,12 @@ export default function SuperAdminScreens() {
                         <Text style={styles.headerSubtitle}>Contrôle total de Pharma Go</Text>
                     </View>
                     <View style={styles.headerActions}>
+                    <TouchableOpacity
+                                style={styles.headerActionBtn}
+                                onPress={() => navigation.navigate('ProfileScreen')}
+                              >
+                                  <Ionicons name="settings-outline" size={22} color="#fff" />
+                              </TouchableOpacity>
                         {activeTab === 'users' && (
                             <TouchableOpacity
                                 style={styles.createAdminBtn}
@@ -314,6 +320,7 @@ export default function SuperAdminScreens() {
                                 <Text style={styles.createAdminBtnText}>+ Admin</Text>
                             </TouchableOpacity>
                         )}
+                        
                         <TouchableOpacity style={styles.logoutBtn} onPress={() => setLogoutModal(true)}>
                             <Ionicons name="log-out-outline" size={22} color="#fff" />
                         </TouchableOpacity>

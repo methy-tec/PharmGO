@@ -5,7 +5,6 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../context/AuthContext';
 import ProfileService from '../../services/ProfileService';
 import Toast from '../../components/Toast';
@@ -125,31 +124,7 @@ function AvatarSection({ user, showToast }) {
     const [loading, setLoading] = useState(false);
 
     const pickImage = async () => {
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (status !== 'granted') {
-            showToast('error', 'Permission refusée', "Autorisez l'accès à la galerie");
-            return;
-        }
-        const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: true,
-            aspect: [1, 1],
-            quality: 0.8,
-        });
-        if (!result.canceled) {
-            const uri = result.assets[0].uri;
-            setPhoto(uri);
-            try {
-                setLoading(true);
-                await ProfileService.uploadAvatar(uri);  // ✅ service commun
-                showToast('success', '✅ Succès', 'Photo de profil mise à jour');
-            } catch (err) {
-                showToast('error', 'Erreur', err.message || 'Impossible de mettre à jour la photo');
-                setPhoto(user?.avatar || null);
-            } finally {
-                setLoading(false);
-            }
-        }
+        showToast('info', '🚧 Bientôt disponible', 'La modification de photo de profil sera disponible prochainement');
     };
 
     const initials = `${user?.firstName?.[0] || ''}${user?.lastName?.[0] || ''}`;
@@ -381,11 +356,20 @@ function HistorySection({ accentColor }) {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        ProfileService.getLoginHistory()
-            .then(res => setHistory(res.data?.history || []))
-            .catch(() => setHistory([]))
-            .finally(() => setLoading(false));
-    }, []);
+    const fetchHistory = async () => {
+        try {
+            const res = await ProfileService.getLoginHistory();
+            setHistory(res.data?.data?.history || []);
+        } catch (err) {
+            console.error('Erreur historique:', err);
+            setHistory([]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    fetchHistory();
+}, []);
 
     const getDeviceIcon = (device) => {
         if (!device) return 'phone-portrait-outline';
