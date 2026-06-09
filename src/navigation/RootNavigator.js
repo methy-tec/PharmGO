@@ -15,6 +15,7 @@ import NewPasswordScreen from "../screens/auth/NewPasswordScreen";
 // Ecrans Home
 import HomeScreen from "../screens/HomeScreen";
 import PharmacyEmployeesScreen from "../screens/admin/PharmacyEmployeeScreen";
+import ProfileScreen from "../screens/profiles/ProfileScreen";
 
 // Ecrans Super Admin et Admin
 import SuperAdminScreens from "../screens/superadmin/SuperAdminScreens";
@@ -45,6 +46,7 @@ function AuthNavigator() {
             <Stack.Screen name="ChangeEmail" component={ChangeEmailScreen} />
             <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
             <Stack.Screen name="NewPassword" component={NewPasswordScreen} />
+            
         </Stack.Navigator>
     );
 }
@@ -75,6 +77,8 @@ function AppNavigator() {
             {!user?.role && (
                 <Stack.Screen name="Home" component={HomeScreen} />
             )}
+
+            <Stack.Screen name="ProfileScreen" component={ProfileScreen} />
         </Stack.Navigator>
     );
 }

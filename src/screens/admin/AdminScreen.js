@@ -198,6 +198,12 @@ export default function AdminHomeScreen({ navigation }) {
             <Text style={styles.headerSubtitle}>Gestion de mes pharmacies</Text>
           </View>
           <View style={{ flexDirection: 'row', gap: 8 }}>
+          <TouchableOpacity
+            style={styles.headerActionBtn}
+            onPress={() => navigation.navigate('ProfileScreen')}
+          >
+              <Ionicons name="settings-outline" size={22} color="#fff" />
+          </TouchableOpacity>
             <TouchableOpacity style={styles.headerActionBtn} onPress={() => setShowAddEmployeeModal(true)}>
               <Ionicons name="person-add" size={20} color="#fff" />
             </TouchableOpacity>

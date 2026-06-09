@@ -202,6 +202,7 @@ export const AuthProvider = ({ children }) => {
 
     const value = {
         user,
+        setUser,
         isLoading,
         isAuthenticated,
         isEmailVerified: user?.isEmailVerified || false,
